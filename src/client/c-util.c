@@ -735,7 +735,6 @@ if (c_cfg.keep_topline)
 	if (((shopping || !inkey_flag || inkey_msg) && (macro__use[(byte)(ch)] == MACRO_USE_CMD)) || inkey_interact_macros) return (ch);
 	if (((shopping || inkey_msg) && (macro__use[(byte)(ch)] == MACRO_USE_HYB)) || inkey_interact_macros) return (ch);
 
-
 	/* Save the first key, advance */
 	buf[p++] = ch;
 	buf[p] = '\0';
@@ -1218,7 +1217,7 @@ static int hack_dir = 0;
  *
  * Note that many "Rogue" keypresses encode a direction.
  */
-static char roguelike_commands(char command) {
+char roguelike_commands(char command) {
 	/* Process the command */
 	switch (command) {
 
@@ -1270,11 +1269,11 @@ static char roguelike_commands(char command) {
 	case KTRL('D'): return ('k');
 
 	/* Locate player on map */
-	case 'W': return ('L');
+	case KTRL('W'): return ('L');
 	/* Browse a book (Peruse) */
 	case 'P': return ('b');
 	/* Steal */
-	case 'S': return ('j');
+	case KTRL('A'): return ('j');
 	/* Toggle search mode */
 	case '#': return ('S');
 	/* Use a staff (Zap) */
@@ -1295,9 +1294,9 @@ static char roguelike_commands(char command) {
 	case 'O': return ('P');
 
 	/* Secondary 'wear/wield' */
-	case KTRL('W'): return ('W');
+	//case 'W': return ('W');
 	/* Swap item */
-	case KTRL('A'): return ('x');
+	case 'S': return ('x');
 	/* House commands */
 	case KTRL('E'): return ('h');
 	/* Reapply auto-inscriptions */
@@ -1335,7 +1334,7 @@ static char roguelike_commands(char command) {
  *
  * Note that "Original" and "Angband" are very similar.
  */
-static char original_commands(char command) {
+char original_commands(char command) {
 	/* Process the command */
 	switch(command) {
 
@@ -1434,8 +1433,23 @@ void bell(void) {
 		    )
 #endif
 #endif
-		Term_xtra(TERM_XTRA_NOISE, 0);
+		if (!c_cfg.quiet_os) Term_xtra(TERM_XTRA_NOISE, 0);
 	}
+
+	/* Flush the input (later!) */
+	flush();
+
+	/* hack for safe_macros item prompts
+	   (Bugfix: Only set abort_prompt to TRUE if we're actually parsing a macro,
+	   otherwise we end up with a lingering rogue 'abort_prompt' that will cause
+	   any next macro to abort in undefined ways even if the macro was fine,
+	   possibly causing the @ menu to pop up if the macro contained an '@' (eg for call-by-name).) */
+	if (parse_macro) abort_prompt = TRUE;
+}
+/* Same as bell() except it doesn't make a sound :D */
+void bell_silent(void) {
+	/* Mega-Hack -- Flush the output */
+	Term_fresh();
 
 	/* Flush the input (later!) */
 	flush();
@@ -1459,7 +1473,7 @@ int page(void) {
 
 	/* Fall back on system-specific default beeps */
 	//Term_fresh();
-	Term_xtra(TERM_XTRA_NOISE, 0);
+	if (!c_cfg.quiet_os) Term_xtra(TERM_XTRA_NOISE, 0);
 	//flush();
 
 	return 1;
@@ -1476,7 +1490,7 @@ int warning_page(void) {
 
 	/* Fall back on system-specific default beeps */
 	//Term_fresh();
-	Term_xtra(TERM_XTRA_NOISE, 0);
+	if (!c_cfg.quiet_os) Term_xtra(TERM_XTRA_NOISE, 0);
 	//flush();
 
 	return 1;
@@ -1546,15 +1560,17 @@ static void c_prt_n(byte attr, char *str, int y, int x, int n) {
  * Jir -- added history.
  * TODO: cursor editing (fix past terminal width extending text)
  */
+typedef char msg_hist_var[MSG_HISTORY_MAX][MSG_LEN];
 bool askfor_aux(char *buf, int len, char mode) {
 	int y, x;
 	int i = 0;
 	int k = 0; /* Is the end of line */
 	int l = 0; /* Is the cursor location on line */
-	int j = 0; /* Loop iterator */
+	int j, j2; /* Loop iterator */
 
 	bool search = FALSE;
-	int s = 0, s2; //todo: check if s=0 is correct
+	int sp_iter, sp_size, sp_end;
+	msg_hist_var *sp_msg;
 
 	bool tail = FALSE;
 	int l_old = l;
@@ -1634,92 +1650,6 @@ bool askfor_aux(char *buf, int len, char mode) {
 		case ESCAPE:
 		//case KTRL('Q'):
 			k = 0;
-			done = TRUE;
-			break;
-
-		case KTRL('C'): /* Allow searching for text in a previously entered chat message */
-			if (nohist) break;
-			if (!search) {
-				/* Begin searching mode */
-				search = TRUE;
-				break;
-			}
-
-			/* Continue search by looking for next match */
-			if (s == MSG_HISTORY_MAX) continue; /* No match exists at all */
-			if (mode & ASKFOR_CHATTING) {
-				/* Look for further match.. */
-				for (s2 = s + 1; s2 < MSG_HISTORY_MAX; s2++) {
-					if (!strstr(message_history_chat[s2], buf)) continue;
-					/* Display the result message, overwriting the real 'buf' only visually, while keeping 'buf' unchanged */
-					c_prt(TERM_YELLOW, format("%s: %s", buf, message_history_chat[s2]), y, x);
-					s = s2;
-					break;
-				}
-				if (s2 == MSG_HISTORY_MAX) { /* No further match found */
-					/* Start from the beginning again, at this point we know there must be at least one match we can find now (again) */
-					for (s2 = 0; s2 <= s; s2++) {
-						if (!strstr(message_history_chat[s2], buf)) continue;
-						/* Display the result message, overwriting the real 'buf' only visually, while keeping 'buf' unchanged */
-						c_prt(TERM_YELLOW, format("%s: %s", buf, message_history_chat[s2]), y, x);
-						s = s2;
-						break;
-					}
-				}
-			} else {
-				/* Look for further match.. */
-				for (s2 = s + 1; s2 < MSG_HISTORY_MAX; s2++) {
-					if (!strstr(message_history[s2], buf)) continue;
-					/* Display the result message, overwriting the real 'buf' only visually, while keeping 'buf' unchanged */
-					c_prt(TERM_YELLOW, format("%s: %s", buf, message_history[s2]), y, x);
-					s = s2;
-					break;
-				}
-				if (s2 == MSG_HISTORY_MAX) { /* No further match found */
-					/* Start from the beginning again, at this point we know there must be at least one match we can find now (again) */
-					for (s2 = 0; s2 <= s; s2++) {
-						if (!strstr(message_history[s2], buf)) continue;
-						/* Display the result message, overwriting the real 'buf' only visually, while keeping 'buf' unchanged */
-						c_prt(TERM_YELLOW, format("%s: %s", buf, message_history[s2]), y, x);
-						s = s2;
-						break;
-					}
-				}
-			}
-			continue;
-		case '\n':
-		case '\r':
-			/* Catch searching mode */
-			if (search) {
-				/* We didn't find any match? */
-				if (s == MSG_HISTORY_MAX) {
-#if 0
-					continue;
-#else /* Actually switch to normal text input instead of just having to discard the unmatched search string: */
-					search = FALSE;
-					buf[len] = '\0';
-					k = l = strlen(buf);
-					c_prt(TERM_WHITE, buf, y, x);
-					/* Note: For some reason the cursor becomes invisible here */
- #if 0 /* This code works randomly. Sometimes it does NOT restore cursor visibility. */
-					Term_set_cursor(1);
-					Term_xtra(TERM_XTRA_SHAPE, 1);
- #endif
-					continue;
-#endif
-				}
-
-				/* Replace our search string by the actual match and go with that */
-				if (mode & ASKFOR_CHATTING) strncpy(buf, message_history_chat[s], len);
-				else strncpy(buf, message_history[s], len);
-				search = FALSE;
-				k = l = strlen(buf);
-				c_prt(TERM_WHITE, buf, y, x);
-				continue;
-			}
-			/* Proceed normally */
-			buf[len] = '\0';
-			k = l = strlen(buf);
 			done = TRUE;
 			break;
 
@@ -1928,15 +1858,14 @@ bool askfor_aux(char *buf, int len, char mode) {
 		case KTRL('N'):
 			if (nohist) break;
 			cur_hist++;
-
 			if (mode & ASKFOR_CHATTING) {
-				if ((!hist_chat_looped && hist_chat_end < cur_hist) ||
+				if ((!hist_chat_looped && cur_hist >= hist_chat_end) ||
 				    (hist_chat_looped && cur_hist >= MSG_HISTORY_MAX))
 					cur_hist = 0;
 				strncpy(buf, message_history_chat[cur_hist], len);
 				buf[len] = '\0';
 			} else {
-				if ((!hist_looped && hist_end < cur_hist) ||
+				if ((!hist_looped && cur_hist >= hist_end) ||
 				    (hist_looped && cur_hist >= MSG_HISTORY_MAX))
 					cur_hist = 0;
 				strncpy(buf, message_history[cur_hist], len);
@@ -1949,12 +1878,12 @@ bool askfor_aux(char *buf, int len, char mode) {
 			if (nohist) break;
 			if (mode & ASKFOR_CHATTING) {
 				if (cur_hist) cur_hist--;
-				else cur_hist = hist_chat_looped ? MSG_HISTORY_MAX - 1 : hist_chat_end;
+				else cur_hist = hist_chat_looped ? MSG_HISTORY_MAX - 1 : hist_chat_end - 1;
 				strncpy(buf, message_history_chat[cur_hist], len);
 				buf[len] = '\0';
 			} else {
 				if (cur_hist) cur_hist--;
-				else cur_hist = hist_looped ? MSG_HISTORY_MAX - 1 : hist_end;
+				else cur_hist = hist_looped ? MSG_HISTORY_MAX - 1 : hist_end - 1;
 				strncpy(buf, message_history[cur_hist], len);
 				buf[len] = '\0';
 			}
@@ -1988,6 +1917,91 @@ bool askfor_aux(char *buf, int len, char mode) {
 		case KTRL('T'): /* Take a screenshot */
 			xhtml_screenshot("screenshot????");
 			break;
+
+		case '\n':
+		case '\r':
+			/* Catch searching mode */
+			if (search) {
+				/* We didn't find any match? */
+				if (sp_iter == sp_size) {
+#if 0
+					continue;
+#else /* Actually switch to normal text input instead of just having to discard the unmatched search string: */
+					search = FALSE;
+					buf[len] = '\0';
+					k = l = strlen(buf);
+					c_prt(TERM_WHITE, buf, y, x);
+					/* Note: For some reason the cursor becomes invisible here */
+ #if 0 /* This code works randomly. Sometimes it does NOT restore cursor visibility. */
+					Term_set_cursor(1);
+					Term_xtra(TERM_XTRA_SHAPE, 1);
+ #endif
+					continue;
+#endif
+				}
+
+				/* Replace our search string by the actual match and go with that */
+				//strncpy(buf, (*sp_msg)[(sp_end - sp_iter) % MSG_HISTORY_MAX], len);
+				strcpy(buf, (*sp_msg)[(sp_end - sp_iter + MSG_HISTORY_MAX * 2) % MSG_HISTORY_MAX]);
+				search = FALSE;
+				k = l = strlen(buf);
+				c_prt(TERM_WHITE, buf, y, x);
+				continue;
+			}
+			/* Proceed normally */
+			buf[len] = '\0';
+			k = l = strlen(buf);
+			done = TRUE;
+			break;
+
+		case KTRL('C'): /* Allow searching for text in a previously entered chat message */
+			if (nohist) break;
+			if (!search) {
+				/* Reverse search, starting with newest entries */
+				if (mode & ASKFOR_CHATTING) {
+					sp_size = hist_chat_looped ? MSG_HISTORY_MAX : hist_chat_end;
+					sp_end = hist_chat_end - 1;
+					sp_msg = &message_history_chat;
+				} else {
+					sp_size = hist_looped ? MSG_HISTORY_MAX : hist_end;
+					sp_end = hist_end - 1;
+					sp_msg = &message_history;
+				}
+				/* No history recorded yet? */
+				if (sp_end < 0) break;
+				/* Begin searching mode */
+				sp_iter = -1;
+				search = TRUE;
+				break;
+			}
+			if (!buf[0]) continue; /* Nothing typed in yet */
+
+			/* Continue search by looking for next match */
+			if (sp_iter == sp_size) continue; /* No match exists at all */
+			/* Look for another match.. */
+			for (j = sp_iter + 1; j < sp_size; j++) {
+				j2 = (sp_end - j + MSG_HISTORY_MAX * 2) % MSG_HISTORY_MAX; /* Reverse direction */
+				if (!strstr((*sp_msg)[j2], buf)) continue;
+				/* Display the result message, overwriting the real 'buf' only visually, while keeping 'buf' unchanged */
+				c_prt(TERM_YELLOW, format("%s: %s", buf, (*sp_msg)[j2]), y, x);
+				sp_iter = j;
+				break;
+			}
+			/* No further match found, but we did find at least one match? */
+			if (j == sp_size && sp_iter != -1) {
+				/* Cycle through search results: Start from the beginning again and search up to the final match again */
+				for (j = 0; j <= sp_iter; j++) {
+					j2 = (sp_end - j + MSG_HISTORY_MAX * 2) % MSG_HISTORY_MAX; /* Reverse direction */
+					if (!strstr((*sp_msg)[j2], buf)) continue;
+					/* Display the result message, overwriting the real 'buf' only visually, while keeping 'buf' unchanged */
+					c_prt(TERM_YELLOW, format("%s: %s", buf, (*sp_msg)[j2]), y, x);
+					sp_iter = j;
+					break;
+				}
+			}
+			/* Absolutely no match found? Need different search term to continue. */
+			else if (j > sp_iter) sp_iter = sp_size;
+			continue;
 
 		default:
 			/* inkey_letter_all hack for c_get_quantity() */
@@ -2029,26 +2043,21 @@ bool askfor_aux(char *buf, int len, char mode) {
 			if (!buf[0]) {
 				/* just skip.. */
 				Term_erase(x, y, vis_len);
-				s = MSG_HISTORY_MAX;
+				sp_iter = sp_size;
 				continue;
 			}
-			if (mode & ASKFOR_CHATTING) {
-				for (s = 0; s < MSG_HISTORY_MAX; s++) {
-					if (!strstr(message_history_chat[s], buf)) continue;
-					/* Display the result message, overwriting the real 'buf' only visually, while keeping 'buf' unchanged */
-					c_prt(TERM_YELLOW, format("%s: %s", buf, message_history_chat[s]), y, x);
-					break;
-				}
-				if (s == MSG_HISTORY_MAX) c_prt(TERM_ORANGE, buf, y, x);
-			} else {
-				for (s = 0; s < MSG_HISTORY_MAX; s++) {
-					if (!strstr(message_history[s], buf)) continue;
-					/* Display the result message, overwriting the real 'buf' only visually, while keeping 'buf' unchanged */
-					c_prt(TERM_YELLOW, format("%s: %s", buf, message_history[s]), y, x);
-					break;
-				}
-				if (s == MSG_HISTORY_MAX) c_prt(TERM_ORANGE, buf, y, x);
+			/* Search term changed: Reset search and look for first match.. */
+			sp_iter = -1;
+			for (j = 0; j < sp_size; j++) {
+				j2 = (sp_end - j + MSG_HISTORY_MAX * 2) % MSG_HISTORY_MAX; /* Reverse direction */
+				if (!strstr((*sp_msg)[j2], buf)) continue;
+				/* Display the result message, overwriting the real 'buf' only visually, while keeping 'buf' unchanged */
+				c_prt(TERM_YELLOW, format("%s: %s", buf, (*sp_msg)[j2]), y, x);
+				sp_iter = j;
+				break;
 			}
+			/* No match found at all */
+			if (sp_iter == sp_size) c_prt(TERM_ORANGE, buf, y, x);
 			continue;
 		}
 
@@ -2081,28 +2090,74 @@ bool askfor_aux(char *buf, int len, char mode) {
 	/* Success */
 	if (nohist) return (TRUE);
 
-	/* Add this to the history */
+	/* Add this to the (chat) history.
+	   Update (chat) history whenever we repeat an old message, removing it from its old position and adding it on top.
+	   This is especially useful for the search-function, as it won't give duplicate hits over time. */
 	if (mode & ASKFOR_CHATTING) {
-		/* Only add to history if it isn't a repetition of our previous message */
-		if (!hist_chat_end || strncmp(message_history_chat[hist_chat_end - 1], buf, sizeof(*message_history_chat) - 1)) {
-			strncpy(message_history_chat[hist_chat_end], buf, sizeof(*message_history_chat) - 1);
-			message_history_chat[hist_chat_end][sizeof(*message_history_chat) - 1] = '\0';
-			hist_chat_end++;
-			if (hist_chat_end >= MSG_HISTORY_MAX) {
-				hist_chat_end = 0;
-				hist_chat_looped = TRUE;
+		int i, j;
+
+		/* Scan history for duplicate of this new message */
+		if (!hist_chat_looped) {
+			for (i = 0; i < hist_chat_end; i++) {
+				if (!strcmp(message_history_chat[i], buf)) {
+					/* Found an old duplicate. Excise it. */
+					for (j = i; j < hist_chat_end - 1; j++) strcpy(message_history_chat[j], message_history_chat[j + 1]);
+					/* Go back one step accordingly */
+					hist_chat_end--;
+					break;
+				}
+			}
+		} else {
+			for (i = hist_chat_end; i < hist_chat_end + MSG_HISTORY_MAX; i++) {
+				if (!strcmp(message_history_chat[i % MSG_HISTORY_MAX], buf)) {
+					/* Found an old duplicate. Excise it. */
+					for (j = i; j < hist_chat_end + MSG_HISTORY_MAX - 1; j++) strcpy(message_history_chat[j % MSG_HISTORY_MAX], message_history_chat[(j + 1) % MSG_HISTORY_MAX]);
+					/* Go back one step accordingly */
+					if (hist_chat_end) hist_chat_end--;
+					else hist_chat_end = MSG_HISTORY_MAX - 1;
+					break;
+				}
 			}
 		}
+		/* Append our message to history */
+		strcpy(message_history_chat[hist_chat_end], buf);
+		hist_chat_end++;
+		if (hist_chat_end >= MSG_HISTORY_MAX) {
+			hist_chat_end = 0;
+			hist_chat_looped = TRUE;
+		}
 	} else {
-		/* Only add to history if it isn't a repetition of our previous message */
-		if (!hist_end || strncmp(message_history_chat[hist_end - 1], buf, sizeof(*message_history) - 1)) {
-			strncpy(message_history[hist_end], buf, sizeof(*message_history) - 1);
-			message_history[hist_end][sizeof(*message_history) - 1] = '\0';
-			hist_end++;
-			if (hist_end >= MSG_HISTORY_MAX) {
-				hist_end = 0;
-				hist_looped = TRUE;
+		int i, j;
+
+		/* Scan history for duplicate of this new message */
+		if (!hist_looped) {
+			for (i = 0; i < hist_end; i++) {
+				if (!strcmp(message_history[i], buf)) {
+					/* Found an old duplicate. Excise it. */
+					for (j = i; j < hist_end; j++) strcpy(message_history[j], message_history[j + 1]);
+					/* Go back one step accordingly */
+					hist_end--;
+					break;
+				}
 			}
+		} else {
+			for (i = hist_end; i < hist_end + MSG_HISTORY_MAX; i++) {
+				if (!strcmp(message_history[i % MSG_HISTORY_MAX], buf)) {
+					/* Found an old duplicate. Excise it. */
+					for (j = i; j < hist_end + MSG_HISTORY_MAX - 1; j++) strcpy(message_history[j % MSG_HISTORY_MAX], message_history[(j + 1) % MSG_HISTORY_MAX]);
+					/* Go back one step accordingly */
+					if (hist_end) hist_end--;
+					else hist_end = MSG_HISTORY_MAX - 1;
+					break;
+				}
+			}
+		}
+		/* Append our message to history */
+		strcpy(message_history[hist_end], buf);
+		hist_end++;
+		if (hist_end >= MSG_HISTORY_MAX) {
+			hist_end = 0;
+			hist_looped = TRUE;
 		}
 	}
 
@@ -4198,11 +4253,11 @@ void interact_macros(void) {
 				macro_processing_exclusive = TRUE;
 
 				/* Access the "basic" pref file */
-				strcpy(buf, "pref.prf");
-				process_pref_file(buf);
+				strcpy(buf2, "pref.prf");
+				process_pref_file(buf2);
 				/* Access the "basic" system pref file */
-				sprintf(buf, "pref-%s.prf", ANGBAND_SYS);
-				process_pref_file(buf);
+				sprintf(buf2, "pref-%s.prf", ANGBAND_SYS);
+				process_pref_file(buf2);
 
  #ifdef FORGET_MACRO_VISUALS
 				/* Access the "visual" system pref file (if any) */
@@ -4211,8 +4266,64 @@ void interact_macros(void) {
 
 				macro_trigger_exclusive[0] = 0; //unhack
 				macro_processing_exclusive = FALSE;
-			} else
+
+
+				/* if there's a default macro on that key, ask user if he wants to keep it */
+				for (i = 0; i < macro__num; i++) {
+					if (streq(macro__pat[i], buf)) {
+						strncpy(macro__buf, macro__act[i], 159);
+						macro__buf[159] = '\0';
+						break;
+					}
+				}
+				if (i < macro__num) {
+					ascii_to_text(buf2, macro__buf);
+					Term_putstr(0, l + 3, -1, TERM_YELLOW, "                                                                               ");
+					Term_putstr(0, l + 3, -1, TERM_YELLOW, buf2);
+					Term_putstr(0, l + 2, -1, TERM_YELLOW, format("This key resets to the following default %s macro. Delete it too? [y/N]",
+					    macro__hyb[i] ? "hybrid" : (macro__cmd[i] ? "command" : "normal")));
+					i = inkey();
+					if (i == 'y' || i == 'Y') macro_del(buf);
+				}
+			} else {
 				c_msg_print("No macro was found.");
+
+				/* If there's a default macro available for this key, ask user if he wants to restore it! */
+				strcpy(macro_trigger_exclusive, buf); //hack
+				macro_processing_exclusive = TRUE;
+
+				/* Access the "basic" pref file */
+				strcpy(buf2, "pref.prf");
+				process_pref_file(buf2);
+				/* Access the "basic" system pref file */
+				sprintf(buf2, "pref-%s.prf", ANGBAND_SYS);
+				process_pref_file(buf2);
+
+ #ifdef FORGET_MACRO_VISUALS
+				/* Access the "visual" system pref file (if any) */
+				handle_process_font_file();
+ #endif
+
+				macro_trigger_exclusive[0] = 0; //unhack
+				macro_processing_exclusive = FALSE;
+
+				for (i = 0; i < macro__num; i++) {
+					if (streq(macro__pat[i], buf)) {
+						strncpy(macro__buf, macro__act[i], 159);
+						macro__buf[159] = '\0';
+						break;
+					}
+				}
+				if (i < macro__num) {
+					ascii_to_text(buf2, macro__buf);
+					Term_putstr(0, l + 3, -1, TERM_YELLOW, "                                                                               ");
+					Term_putstr(0, l + 3, -1, TERM_YELLOW, buf2);
+					Term_putstr(0, l + 2, -1, TERM_YELLOW, format("Do you wish to reset this key to the following default %s macro? [y/N]",
+					    macro__hyb[i] ? "hybrid" : (macro__cmd[i] ? "command" : "normal")));
+					i = inkey();
+					if (i != 'y' && i != 'Y') macro_del(buf);
+				}
+			}
 		}
 #endif
 
@@ -4866,7 +4977,8 @@ void interact_macros(void) {
 			Term_putstr(5, 14, -1, TERM_WHITE, "menu again. You'll then be able to create a normal, command or hybrid");
 			Term_putstr(4, 15, -1, TERM_WHITE, "macro from the whole recorded action by choosing the usual menu points");
 			Term_putstr(16, 16, -1, TERM_WHITE, "for the different macro types: h), c) or n).");
-			Term_putstr(19, 20, -1, TERM_L_RED, ">>>Press any key to start recording<<<");
+			Term_putstr(19, 20, -1, TERM_SELECTOR, ">>>                                <<<");
+			Term_putstr(19 + 3, 20, -1, TERM_L_RED,   "Press any key to start recording");
 
 			/* Wait for confirming keypress to finally start recording */
 			inkey();
@@ -5248,7 +5360,8 @@ void interact_macros(void) {
 #define mw_any 'K'
 #define mw_abilitynt 'm'
 #define mw_abilityt 'M'
-#define mw_custom 'n'
+#define mw_slash 'n'
+#define mw_custom 'N'
 #define mw_load 'o'
 #define mw_equip 'p'
 
@@ -5299,7 +5412,7 @@ Chain_Macro:
 					Term_putstr(8, 19, -1, TERM_L_GREEN, "k/K) Use any item with / without a target)");
 					Term_putstr(8, 20, -1, TERM_L_GREEN, "l)   Use a magic device or activate an item");
 					Term_putstr(8, 21, -1, TERM_L_GREEN, "m/M) Use a basic ability ('m') without/with target (Draconian breath)");
-					Term_putstr(8, 22, -1, TERM_L_GREEN, "n)   Enter a custom action (same as pressing 'a' in macro screen)");
+					Term_putstr(8, 22, -1, TERM_L_GREEN, "n/N) Enter a slash command / Enter a custom action (same as % a)");
 					Term_putstr(8, 23, -1, TERM_L_GREEN, "o/p) Load a macro file / change equipment (wield/takeoff/swap)");
 
 					while (TRUE) {
@@ -5317,7 +5430,8 @@ Chain_Macro:
 							/* invalid action -> exit wizard */
 							if ((choice < 'a' || choice > mw_LAST) &&
 							    choice != 'C' && choice != 'D' && choice != 'E' && choice != 'M' &&
-							    choice != 'G' && choice != 'I' && choice != 'K' && choice != 'H') {
+							    choice != 'G' && choice != 'I' && choice != 'K' && choice != 'H' &&
+							    choice != 'N') {
 								//i = -1;
 								continue;
 							}
@@ -5366,34 +5480,42 @@ Chain_Macro:
 						break;
 
 					case mw_schoolnt:
+						sprintf(tmp, "return get_class_spellnt(%d)", p_ptr->pclass);
+						strcpy(buf, string_exec_lua(0, tmp));
 						Term_putstr(10, 10, -1, TERM_GREEN, "Please enter the exact spell name.");// and pay attention");
 						//Term_putstr(10, 11, -1, TERM_GREEN, "to upper-case and lower-case letters and spaces!");
-						Term_putstr(10, 11, -1, TERM_GREEN, "For example, enter:     \377GPhase Door");
+						Term_putstr(10, 11, -1, TERM_GREEN, format("For example, enter:     \377G%s", buf));
 						Term_putstr(10, 12, -1, TERM_GREEN, "You must have learned a spell before you can use it!");
 						Term_putstr(15, 16, -1, TERM_L_GREEN, "Enter exact spell name:");
 						should_wait = TRUE; /* identify/recharge spells */
 						break;
 
 					case mw_mimicnt:
+						sprintf(tmp, "return get_class_mimicnt(%d)", p_ptr->pclass);
+						strcpy(buf, string_exec_lua(0, tmp));
 						Term_putstr(10, 10, -1, TERM_GREEN, "Please enter the exact spell name.");//and pay attention");
 						//Term_putstr(10, 11, -1, TERM_GREEN, "to upper-case and lower-case letters and spaces!");
-						Term_putstr(10, 11, -1, TERM_GREEN, "For example, enter:     \377GBlink");
+						Term_putstr(10, 11, -1, TERM_GREEN, format("For example, enter:     \377G%s", buf));
 						Term_putstr(10, 12, -1, TERM_GREEN, "You must have learned a spell before you can use it!");
 						Term_putstr(15, 16, -1, TERM_L_GREEN, "Enter exact spell name:");
 						break;
 
 					case mw_schoolt:
+						sprintf(tmp, "return get_class_spellt(%d)", p_ptr->pclass);
+						strcpy(buf, string_exec_lua(0, tmp));
 						Term_putstr(10, 10, -1, TERM_GREEN, "Please enter the exact spell name.");// and pay attention");
 						//Term_putstr(10, 11, -1, TERM_GREEN, "to upper-case and lower-case letters and spaces!");
-						Term_putstr(10, 11, -1, TERM_GREEN, "For example, enter:     \377GManathrust");
+						Term_putstr(10, 11, -1, TERM_GREEN, format("For example, enter:     \377G%s", buf));
 						Term_putstr(10, 12, -1, TERM_GREEN, "You must have learned a spell before you can use it!");
 						Term_putstr(15, 16, -1, TERM_L_GREEN, "Enter exact spell name:");
 						break;
 
 					case mw_mimict:
+						sprintf(tmp, "return get_class_mimict(%d)", p_ptr->pclass);
+						strcpy(buf, string_exec_lua(0, tmp));
 						Term_putstr(10, 10, -1, TERM_GREEN, "Please enter the exact spell name.");// and pay attention");
 						//Term_putstr(10, 11, -1, TERM_GREEN, "to upper-case and lower-case letters and spaces!");
-						Term_putstr(10, 11, -1, TERM_GREEN, "For example, enter:     \377GMagic Missile");
+						Term_putstr(10, 11, -1, TERM_GREEN, format("For example, enter:     \377G%s", buf));
 						Term_putstr(10, 12, -1, TERM_GREEN, "You must have learned a spell before you can use it!");
 						Term_putstr(15, 16, -1, TERM_L_GREEN, "Enter exact spell name:");
 						break;
@@ -5470,7 +5592,7 @@ Chain_Macro:
 
 					case mw_prfimm:
 						Term_putstr(5, 10, -1, TERM_GREEN, "Please choose an immunity preference:");
-						Term_putstr(5, 11, -1, TERM_GREEN, "\377Ga\377g) Lightning  \377Gb\377g) Frost  \377Gc\377g) Acid  \377Gd\377g) Fire  \377Ge\377g) Poison  \377Gf\377g) Water");
+						Term_putstr(5, 11, -1, TERM_GREEN, "\377Ga\377g) Electricity  \377Gb\377g) Cold  \377Gc\377g) Acid  \377Gd\377g) Fire  \377Ge\377g) Poison  \377Gf\377g) Water");
 						Term_putstr(5, 12, -1, TERM_GREEN, "\377G*\377g) None (pick one randomly on polymorphing)");
 						Term_putstr(5, 13, -1, TERM_GREEN, "\377G?\377g) Just check (displays your current immunity preference)");
 						Term_putstr(15, 16, -1, TERM_L_GREEN, "Pick one (a-f,*,?):");
@@ -5500,8 +5622,8 @@ Chain_Macro:
 
 						/* build macro part */
 						switch (choice) {
-						case 'a': strcpy(buf2, "\\e)m@3\rd@Lightning\r"); break;
-						case 'b': strcpy(buf2, "\\e)m@3\rd@Frost\r"); break;
+						case 'a': strcpy(buf2, "\\e)m@3\rd@Electricity\r"); break;
+						case 'b': strcpy(buf2, "\\e)m@3\rd@Cold\r"); break;
 						case 'c': strcpy(buf2, "\\e)m@3\rd@Acid\r"); break;
 						case 'd': strcpy(buf2, "\\e)m@3\rd@Fire\r"); break;
 						case 'e': strcpy(buf2, "\\e)m@3\rd@Poison\r"); break;
@@ -6030,7 +6152,7 @@ Chain_Macro:
 						case 'd': Term_putstr(5, 12, -1, TERM_GREEN, "For example, enter:     \377GLightn");
 							Term_putstr(5, 13, -1, TERM_GREEN, "if you want to use a 'Rod of Lightning Bolts'.");
 							break;
-						case 'e': Term_putstr(5, 12, -1, TERM_GREEN, "For example, enter:     \377GFrostw");
+						case 'e': Term_putstr(5, 12, -1, TERM_GREEN, "For example, enter:     \377GColdw");
 							Term_putstr(5, 13, -1, TERM_GREEN, "if you want to use a 'Frostwoven Cloak'.");
 							break;
 						case 'f': Term_putstr(5, 12, -1, TERM_GREEN, "For example, enter:     \377GSerpen");
@@ -6065,6 +6187,12 @@ Chain_Macro:
 						Term_putstr(5, 16, -1, TERM_L_GREEN, "Enter partial item name or inscription:");
 						break;
 
+					case mw_slash:
+						Term_putstr(5, 10, -1, TERM_GREEN, "Please enter the complete slash command.");
+						Term_putstr(5, 11, -1, TERM_GREEN, "For example, enter:     \377G/cough");
+						Term_putstr(5, 16, -1, TERM_L_GREEN, "Enter a slash command:");
+						break;
+
 					case mw_custom:
 						Term_putstr(5, 10, -1, TERM_GREEN, "Please enter the custom macro action string.");
 						Term_putstr(5, 11, -1, TERM_GREEN, "(You have to specify everything manually here, and won't get");
@@ -6083,31 +6211,60 @@ Chain_Macro:
 						Term_putstr(5, 10, -1, TERM_GREEN, "Do you want to wear/wield, take off or swap an item?");
 						Term_putstr(5, 11, -1, TERM_L_GREEN, "    w\377g) primary wear/wield");
 						Term_putstr(5, 12, -1, TERM_L_GREEN, "    W\377g) secondary wear/wield");
-						Term_putstr(5, 13, -1, TERM_L_GREEN, "    t\377g) take off an item");
-						Term_putstr(5, 14, -1, TERM_L_GREEN, "    x\377g) swap item(s)");
+						if (c_cfg.rogue_like_commands) {
+							Term_putstr(5, 13, -1, TERM_L_GREEN, "    T\377g) take off an item");
+							Term_putstr(5, 14, -1, TERM_L_GREEN, "    S\377g) swap item(s)");
+						} else {
+							Term_putstr(5, 13, -1, TERM_L_GREEN, "    t\377g) take off an item");
+							Term_putstr(5, 14, -1, TERM_L_GREEN, "    x\377g) swap item(s)");
+						}
 						Term_putstr(5, 16, -1, TERM_GREEN, "Note: This macro depends on your current 'rogue_like_commands' option");
 						Term_putstr(5, 17, -1, TERM_GREEN, "      setting and will not work anymore if you change the keymap.");
 
-						while (TRUE) {
-							switch (choice = inkey()) {
-							case ESCAPE:
-							case 'p':
-							case '\010': /* backspace */
-								i = -2; /* leave */
+						if (c_cfg.rogue_like_commands) {
+							while (TRUE) {
+								switch (choice = inkey()) {
+								case ESCAPE:
+								case 'p':
+								case '\010': /* backspace */
+									i = -2; /* leave */
+									break;
+								case KTRL('T'):
+									/* Take a screenshot */
+									xhtml_screenshot("screenshot????");
+									continue;
+								case 'w':
+								case 'W':
+								case 'T':
+								case 'S':
+									break;
+								default:
+									continue;
+								}
 								break;
-							case KTRL('T'):
-								/* Take a screenshot */
-								xhtml_screenshot("screenshot????");
-								continue;
-							case 'w':
-							case 'W':
-							case 't':
-							case 'x':
-								break;
-							default:
-								continue;
 							}
-							break;
+						} else {
+							while (TRUE) {
+								switch (choice = inkey()) {
+								case ESCAPE:
+								case 'p':
+								case '\010': /* backspace */
+									i = -2; /* leave */
+									break;
+								case KTRL('T'):
+									/* Take a screenshot */
+									xhtml_screenshot("screenshot????");
+									continue;
+								case 'w':
+								case 'W':
+								case 't':
+								case 'x':
+									break;
+								default:
+									continue;
+								}
+								break;
+							}
 						}
 						/* exit? */
 						if (i == -2) continue;
@@ -6134,6 +6291,17 @@ Chain_Macro:
 							i = -2;
 							continue;
 						}
+					}
+					else if (choice == mw_slash) {
+						Term_gotoxy(5, 17);
+
+						/* Get an item/spell name */
+						strcpy(buf, "");
+						if (!askfor_aux(buf, 159, 0)) {
+							i = -2;
+							continue;
+						}
+						strcpy(buf, format(":%s\r", buf));
 					}
 					/* mw_mimicidx is special: it requires a number (1..n) */
 					else if (choice == mw_mimicidx) {
@@ -6336,6 +6504,10 @@ Chain_Macro:
 						buf2[l + 2] = 0;
 						break;
 
+					case mw_slash:
+						strcat(buf2, buf);
+						break;
+
 					case mw_custom:
 						strcpy(buf2, buf);
 						break;
@@ -6372,13 +6544,13 @@ Chain_Macro:
 								buf2[3] = 'w';
 								break;
 							case 'W':
-								buf2[3] = KTRL('W');
+								buf2[3] = 'W';
 								break;
-							case 't':
+							case 'T':
 								buf2[3] = 'T';
 								break;
-							case 'x':
-								buf2[3] = KTRL('A');
+							case 'S':
+								buf2[3] = 'S';
 								break;
 							}
 						buf2[4] = '@';
@@ -6705,7 +6877,7 @@ void auto_inscriptions(void) {
 		redraw = TRUE;
 
 		/* display editing 'cursor' */
-		Term_putstr(1, cur_line + 1, -1, TERM_ORANGE, ">>>");
+		Term_putstr(1, cur_line + 1, -1, TERM_SELECTOR, ">>>");
 
 		/* make cursor invisible */
 		Term_set_cursor(0);
@@ -6868,11 +7040,13 @@ void auto_inscriptions(void) {
  */
 static void do_cmd_options_aux(int page, cptr info) {
 	char	ch;
-	int	i, k = 0, n = 0;
+	int	i, k, n = 0, k_no_advance;
+	static int k_lasttime[6] = { 0, 0, 0, 0, 0, 0};
 	int	opt[24];
 	char	buf[256];
 	bool	tmp;
 
+	k = k_no_advance = k_lasttime[page];
 
 	/* Lookup the options */
 	for (i = 0; i < 24; i++) opt[i] = 0;
@@ -6924,6 +7098,8 @@ static void do_cmd_options_aux(int page, cptr info) {
 		switch (ch) {
 			case ESCAPE:
 			case KTRL('Q'):
+				/* Next time on this options page, restore our position */
+				k_lasttime[page] = k_no_advance;
 				return;
 
 			case KTRL('T'):
@@ -6939,51 +7115,58 @@ static void do_cmd_options_aux(int page, cptr info) {
 			case '-':
 			case '8':
 			case 'k':
+			case '\010': //backspace
 				k = (n + k - 1) % n;
+				k_no_advance = k;
 				break;
 
-			case ' ':
-			case '\n':
-			case '\r':
+			case '+':
 			case '2':
 			case 'j':
+			case '\n':
+			case '\r':
+			case ' ':
 				k = (k + 1) % n;
+				k_no_advance = k;
 				break;
 
 			case 'y':
-			//case 'Y':
 			case '6':
 			case 'l':
+			case 's': //set
 				(*option_info[opt[k]].o_var) = TRUE;
 				Client_setup.options[opt[k]] = TRUE;
 				check_immediate_options(opt[k], TRUE, TRUE);
+				k_no_advance = k;
 				k = (k + 1) % n;
 				break;
 
 			case 'n':
-			//case 'N':
 			case '4':
 			case 'h':
+			case 'u': //unset
 				(*option_info[opt[k]].o_var) = FALSE;
 				Client_setup.options[opt[k]] = FALSE;
 				check_immediate_options(opt[k], FALSE, TRUE);
+				k_no_advance = k;
 				k = (k + 1) % n;
 				break;
 
 			case 't':
-			//case 'T':
 			case '5':
-			case 's':
+			case 'w': //switch
 				tmp = 1 - (*option_info[opt[k]].o_var);
 				(*option_info[opt[k]].o_var) = tmp;
 				Client_setup.options[opt[k]] = tmp;
 				check_immediate_options(opt[k], tmp, TRUE);
+				k_no_advance = k;
 				k = (k + 1) % n;
 				break;
 			default:
 				/* directly toggle a specific option */
 				if (ch >= 'A' && ch <= 'A' + n - 1) {
 					k = ch - 'A';
+					k_no_advance = k;
 					tmp = 1 - (*option_info[opt[k]].o_var);
 					(*option_info[opt[k]].o_var) = tmp;
 					Client_setup.options[opt[k]] = tmp;
@@ -8708,63 +8891,6 @@ void my_memfrob(void *s, int n) {
 	}
 }
 
-
-
-/*
- * Check if the server version fills the requirements.
- * Copied from the server code.
- *
- * Branch has to be an exact match.
- */
-bool is_newer_than(version_type *version, int major, int minor, int patch, int extra, int branch, int build) {
-#ifdef ATMOSPHERIC_INTRO
-	/* hack for animating colours before we even have network contact to server */
-	if (!version->major) return TRUE;
-#endif
-
-	if (version->major < major)
-		return FALSE; /* very old */
-	else if (version->major > major)
-		return TRUE; /* very new */
-	else if (version->minor < minor)
-		return FALSE; /* pretty old */
-	else if (version->minor > minor)
-		return TRUE; /* pretty new */
-	else if (version->patch < patch)
-		return FALSE; /* somewhat old */
-	else if (version->patch > patch)
-		return TRUE; /* somewhat new */
-	else if (version->extra < extra)
-		return FALSE; /* a little older */
-	else if (version->extra > extra)
-		return TRUE; /* a little newer */
-	/* Check that the branch is an exact match */
-	else if (version->branch == branch)
-	{
-		/* Now check the build */
-		if (version->build < build)
-			return FALSE;
-		else if (version->build > build)
-			return TRUE;
-	}
-
-	/* Default */
-	return FALSE;
-}
-
-bool is_same_as(version_type *version, int major, int minor, int patch, int extra, int branch, int build)
-{
-	if (version->major == major
-	    && version->minor == minor
-	    && version->patch == patch
-	    && version->extra == extra
-	    && version->branch == branch
-	    && version->build == build)
-		return TRUE;
-
-	return FALSE;
-}
-
 /* dummy */
 void msg_format(int Ind, cptr fmt, ...) {
 	(void) Ind; /* suppress compiler warning */
@@ -9042,12 +9168,12 @@ void interact_audio(void) {
 }
 void toggle_master(bool gui) {
 	cfg_audio_master = !cfg_audio_master;
-	//if (!gui) c_message_add(format("\377yAudio is now %s.", cfg_audio_master ? "ON" : "OFF"));
+	if (!gui) c_message_add(format("\377yAudio is now %s.", cfg_audio_master ? "ON" : "OFF"));
 	set_mixing();
 }
 void toggle_music(bool gui) {
 	cfg_audio_music = !cfg_audio_music;
-	//if (!gui) c_message_add(format("\377yMusic is now %s.", cfg_audio_music ? "ON" : "OFF"));
+	if (!gui) c_message_add(format("\377yMusic is now %s.", cfg_audio_music ? "ON" : "OFF"));
 	set_mixing();
 }
 void toggle_sound(void) {
@@ -9249,28 +9375,28 @@ void audio_pack_selector(void) {
 			for (k = 0; k < PACKS_SCREEN; k++) {
 				if (k - cur_sy + cur_sp >= soundpacks) break;
 				if (k == cur_sy)
-					Term_putstr(0, 4 + k, -1, TERM_ORANGE, sp_dir[cur_sp + k - cur_sy]);
+					Term_putstr(0, 4 + k, -1, TERM_SELECTOR, sp_dir[cur_sp + k - cur_sy]);
 				else
-					Term_putstr(0, 4 + k, -1, TERM_L_WHITE, sp_dir[cur_sp + k - cur_sy]);
+					Term_putstr(0, 4 + k, -1, TERM_WHITE, sp_dir[cur_sp + k - cur_sy]);
 			}
 			for (k = 0; k < PACKS_SCREEN; k++) {
 				if (k - cur_my + cur_mp >= musicpacks) break;
 				if (k == cur_my)
-					Term_putstr(40, 4 + k, -1, TERM_ORANGE, mp_dir[cur_mp + k - cur_my]);
+					Term_putstr(40, 4 + k, -1, TERM_SELECTOR, mp_dir[cur_mp + k - cur_my]);
 				else
-					Term_putstr(40, 4 + k, -1, TERM_L_WHITE, mp_dir[cur_mp + k - cur_my]);
+					Term_putstr(40, 4 + k, -1, TERM_WHITE, mp_dir[cur_mp + k - cur_my]);
 			}
 
 			Term_putstr(0, 15, -1, TERM_L_UMBER, "Selected SP:");
 			Term_putstr(13, 15, -1, TERM_YELLOW, format("%s [by %s]", sp_name[cur_sp], sp_author[cur_sp]));
-			Term_putstr(0, 16, -1, TERM_WHITE, sp_diz[cur_sp]);
-			if (strlen(sp_diz[cur_sp]) >= 80) Term_putstr(0, 17, -1, TERM_WHITE, &sp_diz[cur_sp][80]);
-			if (strlen(sp_diz[cur_sp]) >= 160) Term_putstr(0, 18, -1, TERM_WHITE, &sp_diz[cur_sp][160]);
+			Term_putstr(0, 16, -1, TERM_L_WHITE, sp_diz[cur_sp]);
+			if (strlen(sp_diz[cur_sp]) >= 80) Term_putstr(0, 17, -1, TERM_L_WHITE, &sp_diz[cur_sp][80]);
+			if (strlen(sp_diz[cur_sp]) >= 160) Term_putstr(0, 18, -1, TERM_L_WHITE, &sp_diz[cur_sp][160]);
 			Term_putstr(0, 20, -1, TERM_L_UMBER, "Selected MP:");
 			Term_putstr(13, 20, -1, TERM_YELLOW, format("%s [by %s]", mp_name[cur_mp], mp_author[cur_mp]));
-			Term_putstr(0, 21, -1, TERM_WHITE, mp_diz[cur_mp]);
-			if (strlen(mp_diz[cur_mp]) >= 80) Term_putstr(0, 22, -1, TERM_WHITE, &mp_diz[cur_mp][80]);
-			if (strlen(mp_diz[cur_mp]) >= 160) Term_putstr(0, 23, -1, TERM_WHITE, &mp_diz[cur_mp][160]);
+			Term_putstr(0, 21, -1, TERM_L_WHITE, mp_diz[cur_mp]);
+			if (strlen(mp_diz[cur_mp]) >= 80) Term_putstr(0, 22, -1, TERM_L_WHITE, &mp_diz[cur_mp][80]);
+			if (strlen(mp_diz[cur_mp]) >= 160) Term_putstr(0, 23, -1, TERM_L_WHITE, &mp_diz[cur_mp][160]);
 		}
 		redraw = TRUE;
 
@@ -9406,6 +9532,13 @@ void Send_paste_msg(char *msg) {
 #define PANEL_Y	(SCREEN_PAD_TOP)
 void check_immediate_options(int i, bool yes, bool playing) {
 #ifdef USE_GCU
+	/* Hack for now: Palette animation seems to cause segfault on login in command-line client */
+	if (!strcmp(ANGBAND_SYS, "gcu") && option_info[i].o_var == &c_cfg.palette_animation) {
+		c_cfg.palette_animation = FALSE;
+		(*option_info[i].o_var) = FALSE;
+		Client_setup.options[i] = FALSE;
+	}
+
 	/* BIG_MAP is currently not supported in GCU client */
 	if (!strcmp(ANGBAND_SYS, "gcu") && option_info[i].o_var == &c_cfg.big_map) {
 		c_cfg.big_map = FALSE;

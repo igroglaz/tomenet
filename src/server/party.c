@@ -43,7 +43,6 @@
 
 
 static char *t_crypt(char *inbuf, cptr salt);
-static void del_party(int id);
 static u32b new_accid(void);
 
 /* The hash table itself */
@@ -1010,6 +1009,9 @@ int check_account(char *accname, char *c_name, int *Ind) {
 			/* all green */
 			return(success);
 		}
+		/* Log failure */
+		s_printf("Name already in use: (%d vs %d) <%s>\n", a_id, ptr->account, ptr->accountname);
+		//TODO maybe: Allow admin-dm to take over expired characters here if accountname is ""
 	}
 	/* "Name already in use by another player" (coming from 'else' branch above),
 	   ie character isn't new and it belongs to a different account than ours. */
@@ -1873,7 +1875,7 @@ int guild_add(int adder, cptr name) {
 	for (i = 0; i < MAX_GUILDNOTES; i++) {
 		if (!strcmp(guild_note_target[i], guilds[p_ptr->guild].name)) {
 			if (strcmp(guild_note[i], ""))
-				msg_format(Ind, "\374\377bGuild Note: %s", guild_note[i]);
+				msg_format(Ind, "\374\377bGuild Note: \377%c%s", COLOUR_CHAT_GUILD, p_ptr->censor_swearing ? guild_note[i] : guild_note_u[i]);
 			break;
 		}
 	}
@@ -1924,6 +1926,7 @@ int guild_add_self(int Ind, cptr guild) {
 			/* Everlasting and other chars cannot be in the same guild */
 			if (compat_mode(p_ptr->mode, lookup_player_mode(id_list[i]))) {
 				msg_format(Ind, "\377yYou cannot join %s guilds.", compat_mode(p_ptr->mode, lookup_player_mode(id_list[i])));
+				if (ids) C_KILL(id_list, ids, int);
 				return FALSE;
 			}
 
@@ -1975,7 +1978,7 @@ int guild_add_self(int Ind, cptr guild) {
 	for (i = 0; i < MAX_GUILDNOTES; i++) {
 		if (!strcmp(guild_note_target[i], guilds[p_ptr->guild].name)) {
 			if (strcmp(guild_note[i], ""))
-				msg_format(Ind, "\374\377bGuild Note: %s", guild_note[i]);
+				msg_format(Ind, "\374\377bGuild Note: \377%c%s", COLOUR_CHAT_GUILD, p_ptr->censor_swearing ? guild_note[i] : guild_note_u[i]);
 			break;
 		}
 	}
@@ -2034,7 +2037,7 @@ int guild_auto_add(int Ind, int guild_id, char *message) {
 	for (i = 0; i < MAX_GUILDNOTES; i++) {
 		if (!strcmp(guild_note_target[i], guilds[p_ptr->guild].name)) {
 			if (strcmp(guild_note[i], ""))
-				msg_format(Ind, "\374\377bGuild Note: %s", guild_note[i]);
+				msg_format(Ind, "\374\377bGuild Note: \377%c%s", COLOUR_CHAT_GUILD, p_ptr->censor_swearing ? guild_note[i] : guild_note_u[i]);
 			break;
 		}
 	}
@@ -2228,7 +2231,7 @@ int party_add(int adder, cptr name) {
 	for (i = 0; i < MAX_PARTYNOTES; i++) {
 		if (!strcmp(party_note_target[i], parties[p_ptr->party].name)) {
 			if (strcmp(party_note[i], ""))
-				msg_format(Ind, "\374\377bParty Note: %s", party_note[i]);
+				msg_format(Ind, "\374\377bParty Note: \377%c%s", COLOUR_CHAT_PARTY, p_ptr->censor_swearing ? party_note[i] : party_note_u[i]);
 			break;
 		}
 	}
@@ -2371,7 +2374,7 @@ int party_add_self(int Ind, cptr party) {
 	for (i = 0; i < MAX_PARTYNOTES; i++) {
 		if (!strcmp(party_note_target[i], parties[p_ptr->party].name)) {
 			if (strcmp(party_note[i], ""))
-				msg_format(Ind, "\374\377bParty Note: %s", party_note[i]);
+				msg_format(Ind, "\374\377bParty Note: \377%c%s", COLOUR_CHAT_PARTY, p_ptr->censor_swearing ? party_note[i] : party_note_u[i]);
 			break;
 		}
 	}
@@ -2631,7 +2634,7 @@ void guild_timeout(int id) {
  *
  * Design improvement
  */
-static void del_party(int id) {
+void del_party(int id) {
 	int i;
 	bool sent = FALSE;
 	/* Remove the party altogether */
@@ -3069,6 +3072,22 @@ void guild_msg_ignoring(int sender, int guild_id, cptr msg) {
 			msg_print(i, msg);
 	}
 }
+void guild_msg_ignoring2(int sender, int guild_id, cptr msg, cptr msg_u) {
+	int i;
+
+	/* Check for this guy */
+	for (i = 1; i <= NumPlayers; i++) {
+		if (Players[i]->conn == NOT_CONNECTED)
+			continue;
+
+		if (check_ignore(i, sender))
+			continue;
+
+		/* Check this guy */
+		if (guild_id == Players[i]->guild)
+			msg_print(i, Players[i]->censor_swearing ? msg : msg_u);
+	}
+}
 /*
  * Send a formatted message to a guild.
  */
@@ -3159,6 +3178,22 @@ void party_msg_ignoring(int sender, int party_id, cptr msg) {
 		/* Check this guy */
 		if (player_in_party(party_id, i))
 			msg_print(i, msg);
+	}
+}
+void party_msg_ignoring2(int sender, int party_id, cptr msg, cptr msg_u) {
+	int i;
+
+	/* Check for this guy */
+	for (i = 1; i <= NumPlayers; i++) {
+		if (Players[i]->conn == NOT_CONNECTED)
+			continue;
+
+		if (check_ignore(i, sender))
+			continue;
+
+		/* Check this guy */
+		if (player_in_party(party_id, i))
+			msg_print(i, Players[i]->censor_swearing ? msg : msg_u);
 	}
 }
 
@@ -4015,6 +4050,21 @@ byte lookup_player_level(int id) {
 	/* Not found */
 	return -1L;
 }
+/* Return a player's custom sort order of a character in his account overview screen */
+byte lookup_player_order(s32b id) {
+	hash_entry *ptr;
+
+	if ((ptr = lookup_player(id)))
+		return ptr->order;
+
+	/* Not found */
+	return -1L;
+}
+void set_player_order(s32b id, byte order) {
+	hash_entry *ptr = lookup_player(id);
+
+	ptr->order = order;
+}
 /*
  * Get the player's highest level.
  */
@@ -4554,7 +4604,8 @@ void scan_characters() {
 		ptr = hash_table[slot];
 		while (ptr) {
 			total++;
-			if (ptr->laston && (now - ptr->laston > 3600 * 24 * CHARACTER_EXPIRY_DAYS)) {/*15552000; 7776000 = 90 days at 60fps*/
+			if ((ptr->laston && (now - ptr->laston > 3600 * 24 * CHARACTER_EXPIRY_DAYS)) /*15552000; 7776000 = 90 days at 60fps*/
+			    && !(cfg.admins_never_expire && ptr->admin)) {
 				if (ptr->level >= 50 && ptr->admin == 0) l_printf("%s \\{D%s, level %d, was erased by timeout\n", showdate(), ptr->name, ptr->level);
 				erase_player_hash(slot, &pptr, &ptr);
 				amt++;
@@ -5008,7 +5059,7 @@ void account_checkexpiry(int Ind) {
 /*
  * Add a name to the hash table.
  */
-void add_player_name(cptr name, int id, u32b account, byte race, byte class, byte mode, byte level, byte max_plv, u16b party, byte guild, u32b guild_flags, u16b xorder, time_t laston, byte admin, struct worldpos wpos, char houses, byte winner) {
+void add_player_name(cptr name, int id, u32b account, byte race, byte class, byte mode, byte level, byte max_plv, u16b party, byte guild, u32b guild_flags, u16b xorder, time_t laston, byte admin, struct worldpos wpos, char houses, byte winner, byte order) {
 	int slot;
 	hash_entry *ptr;
 
@@ -5041,6 +5092,7 @@ void add_player_name(cptr name, int id, u32b account, byte race, byte class, byt
 	ptr->wpos.wz = wpos.wz;
 	ptr->houses = houses;
 	ptr->winner = winner;
+	ptr->order = order; /* 0 = existing chars that don't have an order set yet */
 
 	/* Add the rest of the chain to this entry */
 	ptr->next = hash_table[slot];
@@ -5052,7 +5104,7 @@ void add_player_name(cptr name, int id, u32b account, byte race, byte class, byt
 /*
  * Verify a player's data against the hash table. - C. Blue
  */
-void verify_player(cptr name, int id, u32b account, byte race, byte class, byte mode, byte level, u16b party, byte guild, u32b guild_flags, u16b quest, time_t laston, byte admin, struct worldpos wpos, char houses, byte winner) {
+void verify_player(cptr name, int id, u32b account, byte race, byte class, byte mode, byte level, u16b party, byte guild, u32b guild_flags, u16b quest, time_t laston, byte admin, struct worldpos wpos, char houses, byte winner, byte order) {
 	hash_entry *ptr = lookup_player(id);
 
 	/* For savegame conversion 4.2.0 -> 4.2.2: */
@@ -5079,7 +5131,7 @@ void verify_player(cptr name, int id, u32b account, byte race, byte class, byte 
 	}
 	/* added in 4.5.7.1 */
 	if (ptr->wpos.wx != wpos.wx || ptr->wpos.wy != wpos.wy || ptr->wpos.wz != wpos.wz) {
-		s_printf("hash_entry: fixing wpos of %s.\n", ptr->name);
+		s_printf("hash_entry: fixing wpos (%d,%d,%d) of %s (->%d,%d,%d).\n", ptr->wpos.wx, ptr->wpos.wy, ptr->wpos.wz, ptr->name, wpos.wx, wpos.wy, wpos.wz);
 		ptr->wpos.wx = wpos.wx;
 		ptr->wpos.wy = wpos.wy;
 		ptr->wpos.wz = wpos.wz;
@@ -5096,6 +5148,10 @@ void verify_player(cptr name, int id, u32b account, byte race, byte class, byte 
 	if (ptr->winner != winner) {
 		s_printf("hash_entry: fixing winner of %s.\n", ptr->name);
 		ptr->winner = winner;
+	}
+	if (order != 100 && ptr->order != order) { /* hack: order == 100 means do not change it */
+		s_printf("hash_entry: fixing order of %s.\n", ptr->name);
+		ptr->order = order;
 	}
 }
 
@@ -5457,13 +5513,6 @@ void account_change_password(int Ind, char *old_pass, char *new_pass) {
 	msg_print(Ind, "Password changed.");
 }
 
-int lookup_player_ind(u32b id) {
-	int n;
-	for (n = 1; n <= NumPlayers; n++)
-		if (Players[n]->id == id) return n;
-	return 0;
-}
-
 void backup_acclists(void) {
 	FILE *fp;
 	char buf[MAX_PATH_LENGTH], buf2[MAX_PATH_LENGTH];
@@ -5581,7 +5630,7 @@ void restore_acclists(void) {
 			time_t ttime;
 			//s_printf("  adding: '%s' (id %d, acc %d)\n", ptr->name, ptr->id, ptr->account);
 			/* Add backed-up entry again */
-			add_player_name(name_forge, ptr->id, ptr->account, ptr->race, ptr->class, ptr->mode, 1, 1, 0, 0, 0, 0, time(&ttime), ptr->admin, ptr->wpos, ptr->houses, ptr->winner);
+			add_player_name(name_forge, ptr->id, ptr->account, ptr->race, ptr->class, ptr->mode, 1, 1, 0, 0, 0, 0, time(&ttime), ptr->admin, ptr->wpos, ptr->houses, ptr->winner, 0);
 		} else s_printf("  already exists: '%s' (id %d, acc %d)\n", name_forge, ptr->id, ptr->account);
 	}
 
@@ -5634,3 +5683,150 @@ char acc_sum_houses(struct account *acc) {
 	return j;
 }
 
+/* Initialize character ordering for the whole account database,
+   for custom character order in account overview screen after login:
+   All so far 'unsorted' characters have order 0. Due to the divide&conquer nature of ang_sort (quicksort),
+   this means that the result will be partitioned and mixed, so the original ('natural') order is not preserved.
+   This is no biggie, but for extra player comfort, let's imprint the original order here in a first-time conversion:
+   (Ind is just for printing a result message, can be 0.) */
+void init_character_ordering(int Ind) {
+	int i, j, processed = 0, imprinted = 0, imprinted_accounts = 0;
+	int ids, *id_list;
+	hash_entry *ptr, *ptr2;
+
+	for (i = 0; i < NUM_HASH_ENTRIES; i++) {
+		/* Acquire this chain */
+		ptr = hash_table[i];
+		/* Check this chain */
+		while (ptr) {
+			processed++;
+			/* A character was found without order -> imprint the whole account it belongs to */
+			if (!ptr->order) {
+				imprinted_accounts++;
+				/* Treat all characters of this account */
+				ids = player_id_list(&id_list, ptr->account);
+				for (j = 0; j < ids; j++) {
+					//if (lookup_player_order(id_list[j])) continue; /* Paranoia: Skip any that might already have been ordered */
+					/* Imprint all character on this account, even if some were already imprinted, to keep the sequence flawless */
+					imprinted++;
+					ptr2 = lookup_player(id_list[j]);
+					ptr2->order = j + 1; /* Natural order ;) */
+				}
+				if (ids) C_KILL(id_list, ids, int);
+			}
+			/* Next entry in chain */
+			ptr = ptr->next;
+		}
+	}
+	s_printf("INIT_CHARACTER_ORDERING: Processed %d; imprinted %d; imprinted accounts %d.\n", processed, imprinted, imprinted_accounts);
+	if (Ind) msg_format(Ind, "Processed chars %d; imprinted chars %d; imprinted accounts %d.", processed, imprinted, imprinted_accounts);
+}
+/* Like init_character_ordering(), but only for one specified account.
+   (Ind is just for printing a result message, can be 0.) */
+void init_account_order(int Ind, s32b acc_id) {
+	int i, j, processed = 0, imprinted = 0;
+	int ids, *id_list;
+	hash_entry *ptr, *ptr2;
+	char acc_name[ACCOUNTNAME_LEN];
+	bool found = FALSE;
+
+	for (i = 0; i < NUM_HASH_ENTRIES; i++) {
+		/* Acquire this chain */
+		ptr = hash_table[i];
+		/* Check this chain */
+		while (ptr) {
+			if (ptr->account != acc_id) {
+				ptr = ptr->next;
+				continue;
+			}
+			if (!found) {
+				strcpy(acc_name, ptr->accountname);
+				found = TRUE;
+			}
+			/* Check this character */
+			processed++;
+			/* A character was found without order -> imprint the whole account it belongs to */
+			if (!ptr->order) {
+				/* Treat all characters of this account */
+				ids = player_id_list(&id_list, ptr->account);
+				for (j = 0; j < ids; j++) {
+					//if (lookup_player_order(id_list[j])) continue; /* Paranoia: Skip any that might already have been ordered */
+					/* Imprint all character on this account, even if some were already imprinted, to keep the sequence flawless */
+					imprinted++;
+					ptr2 = lookup_player(id_list[j]);
+					ptr2->order = j + 1; /* Natural order ;) */
+				}
+				if (ids) C_KILL(id_list, ids, int);
+				i = NUM_HASH_ENTRIES;
+				break;
+			}
+			/* Next entry in chain */
+			ptr = ptr->next;
+		}
+	}
+	s_printf("INIT_ACCOUNT_ORDER: '%s', processed %d; imprinted %d.\n", acc_name, processed, imprinted);
+	if (Ind) msg_format(Ind, "Account '%s': Processed chars %d; imprinted chars %d.", acc_name, processed, imprinted);
+}
+/* Resets all character ordering to zero aka unordered.
+   While this is the 'natural' order, note that in the Character Overview they will still show up in
+   a different order than the one they were created in, due to the divide&conquer nature of ang_sort
+   that is run over them.
+   (Ind is just for printing a result message, can be 0.) */
+void zero_character_ordering(int Ind) {
+	int i, processed = 0, imprinted = 0;
+	hash_entry *ptr;
+
+	for (i = 0; i < NUM_HASH_ENTRIES; i++) {
+		/* Acquire this chain */
+		ptr = hash_table[i];
+		/* Check this chain */
+		while (ptr) {
+			processed++;
+			if (ptr->order) {
+				/* A character was found without order -> imprint the whole account it belongs to */
+				imprinted++;
+				ptr->order = 0;
+			}
+			/* Next entry in chain */
+			ptr = ptr->next;
+		}
+	}
+	s_printf("INIT_CHARACTER_ORDERING: Processed %d; imprinted %d.\n", processed, imprinted);
+	if (Ind) msg_format(Ind, "Processed chars %d; imprinted chars %d.", processed, imprinted);
+}
+/* Displays order weights for all characters of an account.
+   (Ind is just for printing a result message, can be 0.) */
+void show_account_order(int Ind, s32b acc_id) {
+	int i, j, processed = 0;
+	int ids, *id_list;
+	hash_entry *ptr, *ptr2;
+	char acc_name[ACCOUNTNAME_LEN];
+
+	for (i = 0; i < NUM_HASH_ENTRIES; i++) {
+		/* Acquire this chain */
+		ptr = hash_table[i];
+		/* Check this chain */
+		while (ptr) {
+			if (ptr->account != acc_id) {
+				ptr = ptr->next;
+				continue;
+			}
+			strcpy(acc_name, ptr->accountname);
+			s_printf("SHOW_ACCOUNT_ORDER: '%s':\n", acc_name);
+			if (Ind) msg_format(Ind, "Account '%s':", acc_name);
+			/* Check all characters of this account */
+			ids = player_id_list(&id_list, ptr->account);
+			for (j = 0; j < ids; j++) {
+				processed++;
+				ptr2 = lookup_player(id_list[j]);
+				s_printf("  '%s':%d\n", lookup_player_name(id_list[j]), ptr2->order);
+				if (Ind) msg_format(Ind, "  '%s':%d\n", lookup_player_name(id_list[j]), ptr2->order);
+			}
+			if (ids) C_KILL(id_list, ids, int);
+			i = NUM_HASH_ENTRIES;
+			break;
+		}
+	}
+	s_printf("SHOW_ACCOUNT_ORDER: '%s', processed %d.\n", acc_name, processed);
+	if (Ind) msg_format(Ind, "Account '%s': Processed chars %d.", acc_name, processed);
+}

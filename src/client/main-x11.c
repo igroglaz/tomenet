@@ -573,8 +573,9 @@ static errr Infowin_set_name(cptr name)
 	char buf[128];
 	char *bp = buf;
 	strcpy(buf, name);
-	st = XStringListToTextProperty(&bp, 1, &tp); /* --- Valgrind actually says that this function has a memory leak! --- */
+	st = XStringListToTextProperty(&bp, 1, &tp);
 	if (st) XSetWMName(Metadpy->dpy, Infowin->win, &tp);
+	XFree(tp.value);
 	return (0);
 }
 
@@ -1218,7 +1219,11 @@ static infoclr *xor;
   static infoclr *clr[16 + 1];
  #endif
 #else
- static infoclr *clr[16 * 2];
+ #ifndef EXTENDED_BG_COLOURS
+  static infoclr *clr[16 * 2];
+ #else
+  static infoclr *clr[16 * 2 + 1];
+ #endif
 #endif
 /*
  * Forward declare
@@ -1994,7 +1999,12 @@ static errr Term_text_x11(int x, int y, int n, byte a, cptr s)
 	Infoclr_set(clr[a & 0x1F]);
  #endif
 #else
+ #ifndef EXTENDED_BG_COLOURS
 	Infoclr_set(clr[a & 0x1F]);
+ #else
+	if (a == TERM2_BLUE) a = 1xF + 1;
+	Infoclr_set(clr[a & 0x2F]);
+ #endif
 #endif
 
 	/* Draw the text */
@@ -2588,6 +2598,20 @@ errr init_x11(void) {
 		else if (i) cname = color_name[1];
 		Infoclr_init_ccn (cname, "bg", "cpy", 0);
 	}
+ #ifdef EXTENDED_BG_COLOURS
+	/* Prepare the extended background-using colors */
+	for (i = 0; i < 1; ++i) {
+		cptr cname = color_name[0], cname2 = color_name[0];
+
+		MAKE(clr[32 + i], infoclr);
+		Infoclr_set (clr[32 + i]);
+		if (Metadpy->color) {
+			cname = color_ext_name[i][0];
+			cname2 = color_ext_name[i][1];
+		}
+		Infoclr_init_ccn (cname, cname2, "cpy", 0);
+	}
+ #endif
 #endif
 
 
@@ -3170,9 +3194,10 @@ void animate_palette(void) {
 	for (i = 0; i < 16; ++i) {
 		cptr cname = color_name[0];
 
-		MAKE(clr[i], infoclr);
+		XFreeGC(Metadpy->dpy, clr[i]->gc);
+		//MAKE(clr[i], infoclr);
 		Infoclr_set (clr[i]);
-#if 0 /*wut is diz?*/
+#if 0 /* no colours on this display? */
 		if (Metadpy->color) cname = color_name[i];
 		else if (i) cname = color_name[1];
 #else
@@ -3205,7 +3230,7 @@ void set_palette(byte c, byte r, byte g, byte b) {
 
 #ifdef PALANIM_OPTIMIZED
 	/* Check for refresh market at the end of a palette data transmission */
-	if (c == 127) {
+	if (c == 127 || c == 128) {
 		/* Refresh aka redraw the main window with new colour */
 		if (!term_prefs[0].visible) return;
 		if (term_prefs[0].x == -32000 || term_prefs[0].y == -32000) return;
@@ -3215,7 +3240,7 @@ void set_palette(byte c, byte r, byte g, byte b) {
 		return;
 	}
 #else
-	if (c == 127) return; //just discard refresh marker
+	if (c == 127 || c == 128) return; //just discard refresh marker
 #endif
 
 	color_table[c][1] = r;
@@ -3232,11 +3257,12 @@ void set_palette(byte c, byte r, byte g, byte b) {
 		strcpy(color_name[c], cn);
 
 	/* Activate the palette */
-	MAKE(clr[c], infoclr);
+	XFreeGC(Metadpy->dpy, clr[c]->gc);
+	//MAKE(clr[c], infoclr);
 	Infoclr_set (clr[c]);
-#if 0 /*wut is diz?*/
+#if 0 /* no colours on this display? */
 	if (Metadpy->color) cname = color_name[c];
-	else if (c) cname = color_name[c];
+	else if (c) cname = color_name[1];
 #else
 	cname = color_name[c];
 #endif
@@ -3250,5 +3276,12 @@ void set_palette(byte c, byte r, byte g, byte b) {
 	Term_xtra(TERM_XTRA_FRESH, 0);
 	Term_activate(&old_td->t);
 #endif
+}
+void get_palette(byte c, byte *r, byte *g, byte *b) {
+	u32b cref = clr[c]->fg;
+
+	*r = (cref & 0xFF0000) >> 16;
+	*g = (cref & 0x00FF00) >> 8;
+	*b = (cref & 0x0000FF);
 }
 #endif

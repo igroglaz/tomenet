@@ -404,17 +404,69 @@ int Send_file_end(int ind, unsigned short id) {
 	return 0;
 }
 
+#define LOTSOFCHARS 30 /* just something that is at least as high as max_cpa + all extra slots */
+static bool reorder_characters(int col, int col_cmd, int chars, char names[LOTSOFCHARS][MAX_CHARS]) {
+	char ch;
+	u32b dummy;
+	unsigned char sortA = 255, sortB = 255;
+	int n;
+
+	/* Reorder-GUI */
+	//c_put_str(TERM_SELECTOR, "[", col + sel, 3);
+	//c_put_str(TERM_SELECTOR, "]", col + sel, 76);
+	c_put_str(TERM_L_BLUE, "Press the slot letter of the first of two characters to swap..", col_cmd, 5);
+	ch = 0;
+	while (!ch) {
+		ch = inkey();
+		if (ch == '\e') {
+			c_put_str(TERM_L_BLUE, "                                                               ", col_cmd, 5);
+			return FALSE;
+		}
+		if (ch < 'a' || ch >= 'a' + chars) ch = 0;
+	}
+	sortA = ch;
+	c_put_str(TERM_SLATE, format("Selected: %c) %s", ch, names[ch - 'a']), col_cmd + 1, 5);
+	c_put_str(TERM_L_BLUE, "Press the slot letter of the second of two characters to swap..", col_cmd, 5);
+	ch = 0;
+	while (!ch) {
+		ch = inkey();
+		if (ch == '\e') {
+			c_put_str(TERM_L_BLUE, "                                                               ", col_cmd, 5);
+			c_put_str(TERM_L_BLUE, "                                                               ", col_cmd + 1, 5);
+			return FALSE;
+		}
+		if (ch < 'a' || ch >= 'a' + chars) ch = 0;
+	}
+	sortB = ch;
+	c_put_str(TERM_L_BLUE, "                                                               ", col_cmd, 5);
+	c_put_str(TERM_L_BLUE, "                                                               ", col_cmd + 1, 5);
+
+	/* Tell server which characters we want to swap, server will answer with full character screen data again */
+	Packet_printf(&wbuf, "%c%s", PKT_LOGIN, format("***%c%c", sortA, sortB));
+	Net_flush(); //send it nao!
+	//SetTimeout(5, 0);
+
+	/* Eat and discard server flags, we already know those */
+	if ((n = Packet_scanf(&rbuf, "%c%d%d%d%d", &ch, &dummy, &dummy, &dummy, &dummy)) <= 0) {
+		plog("Packet scan error when trying to read server flags.");
+#ifdef RETRY_LOGIN
+		rl_connection_destroyed = TRUE;
+		return FALSE;
+#endif
+		quit(NULL);
+	}
+	return TRUE;
+}
+
 #define CHARSCREEN_COLOUR TERM_L_GREEN
 #define COL_CHARS 4
 void Receive_login(void) {
 	int n;
 	char ch;
-	//assume that 60 is always more than we will need for max_cpa under all circumstances in the future:
-	int i = 0, max_cpa = 60, max_cpa_plus = 0;
+	int i = 0, max_cpa, max_cpa_plus = 0;
 	short mode = 0;
-	char names[max_cpa][MAX_CHARS], colour_sequence[MAX_CHARS];//sinc max_cpa is made ridiculously high anyway, we don't need to add DED_ slots really :-p
-	//char names[max_cpa + MAX_DED_IDDC_CHARS + MAX_DED_PVP_CHARS + 1][MAX_CHARS], colour_sequence[3];
-	char tmp[MAX_CHARS + 3];	/* like we'll need it... */
+	char names[LOTSOFCHARS][MAX_CHARS], colour_sequence[MAX_CHARS]; //just init way too many names[] so we don't need to bother counting max_cpa + max dedicated slots..
+	char tmp[MAX_CHARS + 3];
 	int ded_pvp = 0, ded_iddc = 0, ded_pvp_shown, ded_iddc_shown;
 	char loc[MAX_CHARS];
 
@@ -427,6 +479,9 @@ void Receive_login(void) {
 
 	bool new_ok = TRUE, exclusive_ok = TRUE;
 	bool found_nick = FALSE;
+
+	bool allow_reordering = FALSE;
+	int offset_bak;
 
 
 	/* Check if the server wanted to destroy the connection - mikaelh */
@@ -451,7 +506,12 @@ void Receive_login(void) {
 
 	/* Read server detail flags for informational purpose - C. Blue */
 	if ((n = Packet_scanf(&rbuf, "%c%d%d%d%d", &ch, &sflags3, &sflags2, &sflags1, &sflags0)) <= 0) {
+		plog("Packet scan error when trying to read server flags.");
+#ifdef RETRY_LOGIN
+		rl_connection_destroyed = TRUE;
 		return;
+#endif
+		quit(NULL);
 	}
 
 //#ifdef WINDOWS
@@ -592,10 +652,20 @@ void Receive_login(void) {
 #endif
 
 	if (total_cpa <= 12) {
-		c_put_str(CHARSCREEN_COLOUR, "Choose an existing character:", 3, 2);
+		if (is_older_than(&server_version, 4, 7, 3, 0, 0, 0))
+			c_put_str(CHARSCREEN_COLOUR, "Choose an existing character:", 3, 2);
+		else {
+			c_put_str(CHARSCREEN_COLOUR, "Choose an existing character: (O to reorder)", 3, 2);
+			allow_reordering = TRUE;
+		}
 		offset = 4;
 	} else if (total_cpa <= 15) {
-		c_put_str(CHARSCREEN_COLOUR, "Choose an existing character:", 2, 2);
+		if (is_older_than(&server_version, 4, 7, 3, 0, 0, 0))
+			c_put_str(CHARSCREEN_COLOUR, "Choose an existing character:", 2, 2);
+		else {
+			c_put_str(CHARSCREEN_COLOUR, "Choose an existing character: (O to reorder)", 2, 2);
+			allow_reordering = TRUE;
+		}
 		offset = 3;
 	} else if (total_cpa <= 16) {
 		offset = 2;
@@ -611,6 +681,11 @@ void Receive_login(void) {
 	max_cpa += max_cpa_plus; /* for now, don't keep them in separate list positions
 				    but just use the '*' marker attached at server side
 				    for visual distinguishing in this character list. */
+	offset_bak = offset;
+	receive_characters:
+	offset = offset_bak;
+	i = 0;
+	ded_pvp = ded_iddc = 0;
 	/* Receive list of characters ('zero'-terminated) */
 	*loc = 0;
 	while ((is_newer_than(&server_version, 4, 5, 7, 0, 0, 0) ?
@@ -634,6 +709,9 @@ void Receive_login(void) {
 		if (streq(c_name, nick)) found_nick = TRUE;
 
 		strcpy(names[i], c_name);
+
+		/* Erase line (for allow_reordering list redrawal) */
+		c_put_str(TERM_WHITE, "                                                                         ", offset + i, COL_CHARS);
 
 		//sprintf(tmp, "%c) %s%s the level %d %s %s", 'a' + i, colour_sequence, c_name, level, race_info[c_race].title, class_info[c_class].title);
 		sprintf(tmp, "%c) %s%s (%d), %s %s", 'a' + i, colour_sequence, c_name, level, race_info[c_race].title, class_info[c_class].title);
@@ -736,7 +814,7 @@ void Receive_login(void) {
 	Term->scr->cx = Term->wid;
 	Term->scr->cu = 1;
 
-	while ((ch < 'a' || ch >= 'a' + i) && (((ch != 'N' || !new_ok) && (ch != 'E' || !exclusive_ok)) || i > (max_cpa - 1))) {
+	while ((ch < 'a' || ch >= 'a' + i) && (((ch != 'N' || !new_ok) && (ch != 'E' || !exclusive_ok)) || i > (max_cpa - 1)) && (ch != 'O' || !allow_reordering)) {
 		ch = inkey();
 		//added CTRL+Q for RETRY_LOGIN, so you can quit the whole game from within in-game via simply double-tapping CTRL+Q
 		if (ch == 'Q' || ch == KTRL('Q')) quit(NULL);
@@ -754,6 +832,14 @@ void Receive_login(void) {
 			c_put_str(CHARSCREEN_COLOUR, "Character Overview", 0, 30);
 		}
 	}
+	if (ch == 'O') {
+		ch = 0;
+		if (reorder_characters(offset_bak, offset, i, names)) goto receive_characters;
+#ifdef RETRY_LOGIN
+		if (rl_connection_destroyed) return;
+#endif
+		goto enter_menu;
+	}
 	if (ch == 'N' || ch == 'E') {
 		/* We didn't read a desired charname from commandline? */
 		if (!cname[0]) {
@@ -768,9 +854,9 @@ void Receive_login(void) {
 		else strcpy(c_name, cname);
 
 		if (total_cpa <= 15)
-			c_put_str(TERM_SLATE, "(Press ENTER to pick a random name, ESC to cancel)", offset + 1, COL_CHARS);
+			c_put_str(TERM_SLATE, "(Keep blank to pick a random name, ESC to cancel)", offset + 1, COL_CHARS);
 		else
-			c_put_str(TERM_SLATE, "(Press ENTER to pick a random name, ESC to cancel)", offset, 35);
+			c_put_str(TERM_SLATE, "(Keep blank to pick a random name, ESC to cancel)", offset, 35);
 
 		while (1) {
 			c_put_str(TERM_YELLOW, "New name: ", offset, COL_CHARS);
@@ -825,6 +911,37 @@ int Net_setup(void) {
 	long todo = 1;
 	char *ptr, str[MAX_CHARS];
 	sockbuf_t cbuf;
+
+#ifdef RETRY_LOGIN
+	/* Try to free up previously allocated memory */
+	if (trait_info) {
+		for (i = 0; i < Setup.max_trait; i++) {
+			if (trait_info[i].title) {
+				string_free(trait_info[i].title);
+				trait_info[i].title = NULL;
+			}
+		}
+	}
+	if (class_info) {
+		for (i = 0; i < Setup.max_class; i++) {
+			if (class_info[i].title) {
+				string_free(class_info[i].title);
+				class_info[i].title = NULL;
+			}
+		}
+	}
+	if (race_info) {
+		for (i = 0; i < Setup.max_race; i++) {
+			if (race_info[i].title) {
+				string_free(race_info[i].title);
+				race_info[i].title = NULL;
+			}
+		}
+	}
+	if (trait_info) C_FREE(trait_info, Setup.max_trait || 1, player_trait);
+	if (class_info) C_FREE(class_info, Setup.max_class, player_class);
+	if (race_info) C_FREE(race_info, Setup.max_race, player_race);
+#endif
 
 	/* Initialize a new socket buffer */
 	if (Sockbuf_init(&cbuf, -1, CLIENT_RECV_SIZE,
@@ -2066,6 +2183,13 @@ int Receive_skill_init(void) {
 	if ((n = Packet_scanf(&rbuf, "%c%hd%hd%hd%hd%d%c%S%S%S", &ch, &i,
 	    &father, &order, &mkey, &flags1, &tval, name, desc, act)) <= 0) return n;
 
+#ifdef RETRY_LOGIN
+	/* Try to free up previously allocated memory */
+	if (s_info[i].name) string_free(s_info[i].name);
+	if (s_info[i].desc) string_free(s_info[i].desc);
+	if (s_info[i].action_desc) string_free(s_info[i].action_desc);
+#endif
+
 	/* XXX XXX These are x32b, not char * !!!!!
 	 * It's really needed that we separate c-types.h from types.h
 	 * Now they're uintptr */
@@ -2223,12 +2347,21 @@ int Receive_char(void) {
 	if ((n = Packet_scanf(&rbuf, "%c%c%c%c%c", &ch, &x, &y, &a, &c)) <= 0) return n;
 
 	/* Old cfg.hilite_player implementation has been disabled after 4.6.1.1 because it interferes with custom fonts */
+#if 0
 	if (!is_newer_than(&server_version, 4, 6, 1, 1, 0, 1)) {
 		if ((c & 0x80)) {
 			c &= 0x7F;
 			is_us = TRUE;
 		}
 	}
+#else
+	if (!is_older_than(&server_version, 4, 7, 3, 0, 0, 0)) {
+		if ((a & TERM_HILITE_PLAYER)) {
+			a &= ~TERM_HILITE_PLAYER;
+			is_us = TRUE;
+		}
+	}
+#endif
 
 #ifdef TEST_CLIENT
 	/* special hack for mind-link Windows->Linux w/ font_map_solid_walls */
@@ -2740,6 +2873,11 @@ int Receive_item(void) {
 			item_tester_hook = item_tester_hook_starid;
 			get_item_hook_find_obj_what = "Which item? ";
 			break;
+		case ITH_CHEMICAL: //ENABLE_EXCAVATION
+			get_item_extra_hook = get_item_hook_find_obj;
+			item_tester_hook = item_tester_hook_chemical;
+			get_item_hook_find_obj_what = "Which ingredient? ";
+			break;
 		}
 
 		clear_topline();
@@ -3171,7 +3309,7 @@ int Receive_store(void) {
 	byte	attr;
 	s16b	wgt, num, pval;
 
-	if (is_newer_than(&server_version, 4, 7, 2, 0, 0, 0)) {
+	if (is_atleast(&server_version, 4, 7, 3, 0, 0, 0)) {
 		if ((n = Packet_scanf(&rbuf, "%c%c%c%hd%hd%d%S%c%c%hd%s", &ch, &pos, &attr, &wgt, &num, &price, name, &tval, &sval, &pval, &powers)) <= 0)
 			return n;
 	} else if (is_newer_than(&server_version, 4, 4, 7, 0, 0, 0)) {
@@ -3419,6 +3557,16 @@ int Receive_sound(void) {
 	} else {
 		if ((n = Packet_scanf(&rbuf, "%c%c", &ch, &s)) <= 0) return n;
 		s1 = s;
+	}
+
+	/* Hack for thunderstorm weather sfx - delay it and cast a lightning lighting effect first.
+	   We want to check this even if use_sound is FALSE, because we still can see the visual effect. */
+	if (t == SFX_TYPE_WEATHER && s1 == thunder_sound_idx) {
+		if (noweather_mode || c_cfg.no_weather) return 1;
+		animate_lightning = 1;
+		animate_lightning_vol = v;
+		/* Delay thunderclap! */
+		return 1;
 	}
 
 	/* Make a sound (if allowed) */
@@ -3977,7 +4125,7 @@ int Receive_chardump(void) {
 	strnfmt(tmp, 160, "%s%s_%04d-%02d-%02d_%02d.%02d.%02d.txt", cname, type,
 	    1900 + ctl->tm_year, ctl->tm_mon + 1, ctl->tm_mday,
 	    ctl->tm_hour, ctl->tm_min, ctl->tm_sec);
-	file_character(tmp, FALSE);
+	file_character(tmp, TRUE);
 
 	return 1;
 }

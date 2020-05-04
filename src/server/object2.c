@@ -71,6 +71,7 @@ static int tc_biasr_junk = 100;
 /*
  * Excise a dungeon object from any stacks
  * Borrowed from ToME.
+ * Note: Will skip any o_ptr->embed items since their c_ptr->o_idx will be 0.
  */
 void excise_object_idx(int o_idx) {
 	object_type *j_ptr, *o_ptr;
@@ -165,7 +166,7 @@ void excise_object_idx(int o_idx) {
 					/* Remove from list */
 					if (c_ptr) {
 						c_ptr->o_idx = next_o_idx;
-						nothing_test2(c_ptr, x, y, &j_ptr->wpos, 0);
+						nothing_test2(c_ptr, x, y, &j_ptr->wpos, 6); //was 0
 					}
 				}
 				/* Real previous */
@@ -185,12 +186,12 @@ void excise_object_idx(int o_idx) {
 				/* Done */
 				break;
 			}
-#ifdef MAX_ITEMS_STACKING
+//#ifdef MAX_ITEMS_STACKING
 			else {
-				/* decrement it's stack position index */
+				/* decrement its stack position index */
 				if (o_ptr->stack_pos) o_ptr->stack_pos--;
 			}
-#endif
+//#endif
 
 			/* Save prev_o_idx */
 			prev_o_idx = this_o_idx;
@@ -209,6 +210,8 @@ void excise_object_idx(int o_idx) {
 
 /*
  * Delete a dungeon object
+ * unfound_art: TRUE -> set artifact to 'not found' aka findable again. This is the normal use.
+ *              FALSE is used for when an item isn't really removed 'from the game world', but just relocated.
  */
 void delete_object_idx(int o_idx, bool unfound_art) {
 	object_type *o_ptr = &o_list[o_idx];
@@ -218,6 +221,9 @@ void delete_object_idx(int o_idx, bool unfound_art) {
 	int x = o_ptr->ix;
 	//cave_type **zcave;
 	struct worldpos *wpos = &o_ptr->wpos;
+
+	/* Hack: Erase monster trap, if this item was part of one */
+	if (o_ptr->embed == 1) erase_mon_trap(&o_ptr->wpos, o_ptr->iy, o_ptr->ix, o_idx);
 
 #if 1 /* extra logging for artifact timeout debugging */
 	if (true_artifact_p(o_ptr) && o_ptr->owner) {
@@ -253,7 +259,7 @@ void delete_object_idx(int o_idx, bool unfound_art) {
 
 #ifdef PLAYER_STORES
 	/* Log removal of player store items */
-	if (!(o_ptr->held_m_idx) && o_ptr->note && strstr(quark_str(o_ptr->note), "@S")
+	if (!(o_ptr->held_m_idx) && !o_ptr->embed && o_ptr->note && strstr(quark_str(o_ptr->note), "@S")
 	    && inside_house(wpos, o_ptr->ix, o_ptr->iy)) {
 		char o_name[ONAME_LEN];//, p_name[NAME_LEN];
 		object_desc(0, o_name, o_ptr, TRUE, 3);
@@ -274,7 +280,7 @@ void delete_object_idx(int o_idx, bool unfound_art) {
 
 	/* Visual update */
 	/* Dungeon floor */
-	if (!(o_ptr->held_m_idx)) everyone_lite_spot(wpos, y, x);
+	if (!(o_ptr->held_m_idx) && !o_ptr->embed) everyone_lite_spot(wpos, y, x);
 
 	/* log special cases */
 	if (o_ptr->tval == TV_SCROLL && o_ptr->sval == SV_SCROLL_ARTIFACT_CREATION)
@@ -292,7 +298,8 @@ void delete_object(struct worldpos *wpos, int y, int x, bool unfound_art) { /* m
 	cave_type *c_ptr;
 	cave_type **zcave;
 
-	/* Refuse "illegal" locations */
+	/* Refuse "illegal" locations.
+	   Also takes care of hold_m_idx and embed items (monster inventory / monster traps) */
 	if (!in_bounds(y, x)) return;
 
 	if ((zcave = getcave(wpos))) {
@@ -362,7 +369,7 @@ void delete_object(struct worldpos *wpos, int y, int x, bool unfound_art) { /* m
  * you are, by definition, not smart enough to debug it.
  * -- Brian W. Kernighan
  */
-//#define DONT_COMPACT_NEARBY
+//#define DONT_COMPACT_NEARBY  --not implemented (idea was: don't compact objects that are close to a player)
 void compact_objects(int size, bool purge) {
 	int i, y, x, num, cnt, Ind; //, j, ny, nx;
 
@@ -405,6 +412,9 @@ void compact_objects(int size, bool purge) {
 
 			/* Skip dead objects */
 			if (!o_ptr->k_idx) continue;
+
+			/* Skip items in monster traps or monster inventory */
+			if (o_ptr->held_m_idx || o_ptr->embed == 1) continue;
 
 			/* Questors are immune */
 			if (o_ptr->questor) continue;
@@ -557,9 +567,7 @@ void compact_objects(int size, bool purge) {
 		/* fix monsters' inventories */
 		for (i = 1; i < m_max; i++) {
 			m_ptr = &m_list[i];
-			if (m_ptr->hold_o_idx) {
-				m_ptr->hold_o_idx = old_idx[m_ptr->hold_o_idx];
-			}
+			if (m_ptr->hold_o_idx) m_ptr->hold_o_idx = old_idx[m_ptr->hold_o_idx];
 		}
 #endif	/* MONSTER_INVENTORY */
 
@@ -567,30 +575,32 @@ void compact_objects(int size, bool purge) {
 		   the correct objects in our newly resorted o_list */
 		for (i = 1; i < o_max; i++) {
 			o_ptr = &o_list[i];
+
+			/* Skip monster inventory (not in_bounds2() anyway: 0,0) */
+			if (o_ptr->held_m_idx) continue;
+
 			wpos = &o_ptr->wpos;
 			x = o_ptr->ix;
 			y = o_ptr->iy;
 
 			if ((zcave = getcave(wpos))) {
 				c_ptr = &zcave[y][x];
-				if (in_bounds2(wpos, y, x)) {
-					if (old_idx[c_ptr->o_idx] == i) {
-						c_ptr->o_idx = i;
-						nothing_test2(c_ptr, x, y, wpos, 1);
-					}
-				}
-				else {
-					y = 255 - y;
+				if (o_ptr->embed == 1) { /* Monster trap kit/load */
 					if (in_bounds2(wpos, y, x)) {
-						c_ptr = &zcave[y][x];
 						if (c_ptr->feat == FEAT_MON_TRAP) {
 							struct c_special *cs_ptr;
+
 							if ((cs_ptr = GetCS(c_ptr, CS_MON_TRAP))) {
 								if (old_idx[cs_ptr->sc.montrap.trap_kit] == i) {
 									cs_ptr->sc.montrap.trap_kit = i;
 								}
 							}
 						}
+					}
+				} else if (in_bounds2(wpos, y, x)) {
+					if (old_idx[c_ptr->o_idx] == i) {
+						c_ptr->o_idx = i;
+						nothing_test2(c_ptr, x, y, wpos, 7);//was 1
 					}
 				}
 			}
@@ -637,8 +647,7 @@ void wipe_o_list(struct worldpos *wpos) {
 		if (!o_ptr->k_idx) continue;
 
 		/* Skip objects not on this depth */
-		if (!inarea(&o_ptr->wpos, wpos))
-			continue;
+		if (!inarea(&o_ptr->wpos, wpos)) continue;
 
 		/* Mega-Hack -- preserve artifacts */
 		/* Hack -- Preserve unknown artifacts */
@@ -678,8 +687,20 @@ void wipe_o_list(struct worldpos *wpos) {
 		else
 #endif	// MONSTER_INVENTORY
 //		if (flag && in_bounds2(wpos, o_ptr->iy, o_ptr->ix))
-		if (flag && in_bounds_array(o_ptr->iy, o_ptr->ix))
-			zcave[o_ptr->iy][o_ptr->ix].o_idx = 0;
+		if (flag) {
+			if (in_bounds_array(o_ptr->iy, o_ptr->ix)) {
+				if (o_ptr->embed == 1) {
+					cave_type *c_ptr = &zcave[o_ptr->iy][o_ptr->ix];
+					struct c_special *cs_ptr = GetCS(c_ptr, CS_MON_TRAP);
+
+					if (cs_ptr) {
+						cave_set_feat_live(wpos, o_ptr->iy, o_ptr->ix, cs_ptr->sc.montrap.feat);
+						cs_erase(c_ptr, cs_ptr);
+					}
+					c_ptr->o_idx = 0;
+				} else zcave[o_ptr->iy][o_ptr->ix].o_idx = 0;
+			}
+		}
 
 		/* Wipe the object */
 		WIPE(o_ptr, object_type);
@@ -690,8 +711,8 @@ void wipe_o_list(struct worldpos *wpos) {
 }
 /*
  * Delete all the items, but except those in houses.  - Jir -
- * Also skips questors and special quest items now. Note that this is also the
- * command to be used by all admin slash commands. - C. Blue
+ * Also skips monster traps, questors and special quest items now.
+ * Note that this is also the command to be used by all admin slash commands. - C. Blue
  *
  * Note -- we do NOT visually reflect these (irrelevant) changes
  * (cave[Depth][y][x].info & CAVE_ICKY)
@@ -717,15 +738,14 @@ void wipe_o_list_safely(struct worldpos *wpos) {
 			continue;
 
 		/* Skip objects not on this depth */
-		if (!(inarea(wpos, &o_ptr->wpos)))
-			continue;
+		if (!(inarea(wpos, &o_ptr->wpos))) continue;
 
-/* DEBUG -after getting weird crashes today 2007-12-21 in bree from /clv, and multiplying townies, I added this inbound check- C. Blue */
-		//if (in_bounds_array(o_ptr->iy, o_ptr->ix)) {
-			/* Skip objects inside a house but not in a vault in dungeon/tower */
-			if (!wpos->wz && zcave[o_ptr->iy][o_ptr->ix].info & CAVE_ICKY)
-				continue;
-		//}
+		if (!in_bounds_array(o_ptr->iy, o_ptr->ix)) continue; /* <- Probably can go now, was needed for old monster trap hack of 255 - y coordinate */
+
+		if (o_ptr->embed == 1) continue; /* Skip items inside monster traps */
+
+		/* Skip objects inside a house but not in a vault in dungeon/tower */
+		if (!wpos->wz && zcave[o_ptr->iy][o_ptr->ix].info & CAVE_ICKY) continue;
 
 		/* Mega-Hack -- preserve artifacts */
 		/* Hack -- Preserve unknown artifacts */
@@ -761,11 +781,9 @@ void wipe_o_list_safely(struct worldpos *wpos) {
 		}
 
 		/* Dungeon */
-		else if (in_bounds_array(o_ptr->iy, o_ptr->ix))
+		else
 #endif	// MONSTER_INVENTORY
-		{
-			zcave[o_ptr->iy][o_ptr->ix].o_idx = 0;
-		}
+		zcave[o_ptr->iy][o_ptr->ix].o_idx = 0;
 
 		/* Wipe the object */
 		WIPE(o_ptr, object_type);
@@ -837,8 +855,21 @@ void wipe_o_list_special(struct worldpos *wpos) {
 		else
 #endif	// MONSTER_INVENTORY
 //		if (flag && in_bounds2(wpos, o_ptr->iy, o_ptr->ix))
-		if (flag && in_bounds_array(o_ptr->iy, o_ptr->ix))
-			zcave[o_ptr->iy][o_ptr->ix].o_idx = 0;
+		if (flag) {
+			if (in_bounds_array(o_ptr->iy, o_ptr->ix)) {
+				if (o_ptr->embed == 1) {
+					cave_type *c_ptr = &zcave[o_ptr->iy][o_ptr->ix];
+					struct c_special *cs_ptr = GetCS(c_ptr, CS_MON_TRAP);
+
+					if (cs_ptr) {
+						cave_set_feat_live(wpos, o_ptr->iy, o_ptr->ix, cs_ptr->sc.montrap.feat);
+						cs_erase(c_ptr, cs_ptr);
+					}
+					c_ptr->o_idx = 0;
+				}
+				else zcave[o_ptr->iy][o_ptr->ix].o_idx = 0;
+			}
+		}
 
 		/* Wipe the object */
 		WIPE(o_ptr, object_type);
@@ -970,6 +1001,8 @@ errr get_obj_num_prep(u32b resf) {
 		if ((resf & RESF_COND_BLUNT) && which_theme(tval) == 2 && tval != TV_BLUNT) p = 0;
 		//force generation of a non-sword weapon, if generating a _weapon_ at all
 		if ((resf & RESF_CONDF_NOSWORD) && is_melee_weapon(tval) && tval == TV_SWORD) p = 0;
+		//prevent generation of a mage staff -- Saruman specialty
+		if ((resf & RESF_CONDF_NOMSTAFF) && tval == TV_MSTAFF) p = 0;
 		//force generation of a mage staff:
 		if (resf & RESF_CONDF_MSTAFF && tval != TV_MSTAFF) p = 0;
 		//force generation of a sling or sling-ammo, if generating a combat item at all
@@ -1172,7 +1205,7 @@ s16b get_obj_num(int max_level, u32b resf) {
 	if (max_level > 0) {
 		/* Occasional "boost" */
 		if (rand_int(GREAT_OBJ) == 0) {
-			/* What a bizarre calculation */
+			/* What a bizarre calculation - maybe TODO: Make this saner, but still keep DSM drop in orc cave possibility etc */
                         max_level = 1 + ((max_level * MAX_DEPTH_OBJ) / randint(MAX_DEPTH_OBJ));
 		}
 	}
@@ -3696,6 +3729,14 @@ bool object_similar(int Ind, object_type *o_ptr, object_type *j_ptr, s16b tolera
 			if (o_ptr->pval != j_ptr->pval) return(FALSE);
 			break;
 
+#ifdef ENABLE_EXCAVATION
+		case TV_CHEMICAL:
+			if (o_ptr->xtra1 != j_ptr->xtra1) return FALSE;
+			if (o_ptr->xtra2 != j_ptr->xtra2) return FALSE;
+			if (o_ptr->xtra3 != j_ptr->xtra3) return FALSE;
+			break;
+#endif
+
 		/* Various */
 		default:
 			/* Require knowledge */
@@ -3813,7 +3854,7 @@ void object_absorb(int Ind, object_type *o_ptr, object_type *j_ptr) {
 			/* player-dropped piles are compact */
  #ifndef SMELTING /* disable for golem piece smelting feature in project_i(): requires unchanged colour to accumulate the necessary copper/silver (it's ok for gold) */
 			o_ptr->k_idx = gold_colour(o_ptr->pval, FALSE, TRUE);
-			everyone_lite_spot(&o_ptr->wpos, o_ptr->iy, o_ptr->ix);
+			if (!o_ptr->embed && !o_ptr->held_m_idx) everyone_lite_spot(&o_ptr->wpos, o_ptr->iy, o_ptr->ix);
  #endif
 			o_ptr->sval = k_info[o_ptr->k_idx].sval;
 		} else if (!o_ptr->xtra2 && !j_ptr->xtra2) { /* coin-type monster piles don't change type to something else */
@@ -4391,12 +4432,6 @@ static bool make_ego_item(int level, object_type *o_ptr, bool good, u32b resf) {
 	int *ok_ego, ok_num = 0;
 	bool ret = FALSE, double_ok = !(resf & RESF_NODOUBLEEGO);
 	byte tval = o_ptr->tval;
-#if 0 /* make_ego_item() is called BEFORE the book is set to a specific school spell! */
-	bool crystal =
-	    o_ptr->tval == TV_BOOK &&
-	    o_ptr->sval == SV_SPELLBOOK &&
-	    get_spellbook_name_colour(o_ptr->pval) == TERM_YELLOW;
-#endif
 
 	if (artifact_p(o_ptr) || o_ptr->name2) return (FALSE);
 
@@ -4406,25 +4441,20 @@ static bool make_ego_item(int level, object_type *o_ptr, bool good, u32b resf) {
 	for (i = 0, n = e_tval_size[tval]; i < n; i++) {
 		ego_item_type *e_ptr = &e_info[e_tval[tval][i]];
 		bool ok = FALSE;
-#if 0 /* done in e_info */
-		bool cursed = FALSE;
-#endif
 
 		/* Must have the correct fields */
 		for (j = 0; j < MAX_EGO_BASETYPES; j++) {
 			if ((e_ptr->tval[j] == o_ptr->tval) && (e_ptr->min_sval[j] <= o_ptr->sval) && (e_ptr->max_sval[j] >= o_ptr->sval)) ok = TRUE;
-
-#if 0 /* done in e_info */
-			for (k = 0; k < 5-4; k++) if (e_ptr->flags3[k] & TR3_CURSED) cursed = TRUE;
-#endif
 			if (ok) break;
 		}
-#if 0 /* done in e_info */
-		/* No curse-free ego powers on broken or rusty items; no elven filthy rags */
-		if (!cursed && (o_ptr->k_idx == 30 || o_ptr->k_idx == 47 || o_ptr->k_idx == 110 || (o_ptr->k_idx == 102 && i == EGO_ELVENKIND))) ok = FALSE;
-#endif
 		if (!ok) {
 			/* Doesnt count as a try*/
+			continue;
+		}
+
+		/* Exception: Instant-ego items don't heed 'power', as they usually only have 1 specific available ego-power to become complete! */
+		if (k_info[o_ptr->k_idx].flags6 & TR6_INSTA_EGO) {
+			ok_ego[ok_num++] = e_tval[tval][i];
 			continue;
 		}
 
@@ -4445,8 +4475,34 @@ static bool make_ego_item(int level, object_type *o_ptr, bool good, u32b resf) {
 		return(FALSE);
 	}
 
+	/* Instant-ego items don't need to roll, they must be completed. */
+	if (k_info[o_ptr->k_idx].flags6 & TR6_INSTA_EGO) {
+		ego_item_type *e_ptr;
+
+		i = ok_ego[rand_int(ok_num)];
+		e_ptr = &e_info[i];
+
+		/* Maybe todo if there are really more than just 1 available ego-power for an instant-ego base item:
+		   Pay heed to their rarities. Currently we just do above's rand_int over all available powers, not checking their actual rarities. */
+
+		/* Hack -- mark the item as an ego */
+		o_ptr->name2 = i;
+
+		/* Piece together a 32-bit random seed */
+		if (e_ptr->fego1[0] & ETR1_NO_SEED) o_ptr->name3 = 0;
+		else {
+			o_ptr->name3 = (u32b)rand_int(0xFFFF) << 16;
+			o_ptr->name3 += rand_int(0xFFFF);
+		}
+
+		/* Instant egos don't get a 2nd ego power. Maybe todo: Change. */
+		double_ok = FALSE;
+
+		/* Success */
+		ret = TRUE;
+	} else
+
 	/* Now test them a few times */
-//	for (i = 0; i < ok_num * 10; i++)	// I wonder..
 	for (j = 0; j < ok_num * 10; j++) {
 		ego_item_type *e_ptr;
 
@@ -4468,15 +4524,8 @@ static bool make_ego_item(int level, object_type *o_ptr, bool good, u32b resf) {
 		}
 
 		/* We must make the "rarity roll" */
-//		if (rand_int(e_ptr->mrarity - luck(-(e_ptr->mrarity / 2), e_ptr->mrarity / 2)) > e_ptr->rarity)
-#if 0
-		k = e_ptr->mrarity - e_ptr->rarity;
-		if (k && rand_int(k)) continue;
-#endif	// 0
-
 		if (e_ptr->mrarity == 255) continue;
 		if (rand_int(e_ptr->mrarity) > e_ptr->rarity) continue;
-//		if (rand_int(e_ptr->rarity) < e_ptr->mrarity) continue;
 
 		/* Hack -- mark the item as an ego */
 		o_ptr->name2 = i;
@@ -4500,8 +4549,10 @@ static bool make_ego_item(int level, object_type *o_ptr, bool good, u32b resf) {
 	 * Also make sure we dont already have a name2b, wchih would mean a special ego item
 	 */
 	/* try only when it's already ego	- Jir - */
-//	if (magik(7 + luck(-7, 7)) && (!o_ptr->name2b))
 	if (ret && double_ok && magik(7) && (!o_ptr->name2b)) {
+		object_type o_bak = *o_ptr;
+		int redundancy_tries = 10;
+
 		/* Now test them a few times */
 		for (j = 0; j < ok_num * 10; j++) {
 			ego_item_type *e_ptr;
@@ -4532,10 +4583,8 @@ static bool make_ego_item(int level, object_type *o_ptr, bool good, u32b resf) {
 			}
 
 			/* We must make the "rarity roll" */
-//			if (rand_int(e_ptr->mrarity - luck(-(e_ptr->mrarity / 2), e_ptr->mrarity / 2)) > e_ptr->rarity)
 			if (e_ptr->mrarity == 255) continue;
 			if (rand_int(e_ptr->mrarity) > e_ptr->rarity) continue;
-//			if (rand_int(e_ptr->rarity) < e_ptr->mrarity) continue;
 
 			/* Don't allow silyl combinations that either don't
 			   make sense or that cause technical problems: */
@@ -4654,11 +4703,40 @@ static bool make_ego_item(int level, object_type *o_ptr, bool good, u32b resf) {
 			/* Hack -- mark the item as an ego */
 			o_ptr->name2b = i;
 
-			/* Piece together a 32-bit random seed */
-			if (!(e_ptr->fego1[0] & ETR1_NO_SEED) && !o_ptr->name3) {
+			/* This ego power doesn't use a seed? No need to reroll it then. (Not going to reroll oname2 seed for this.) */
+			if (e_ptr->fego1[0] & ETR1_NO_SEED) redundancy_tries = 0;
+			/* If the two ego powers can, depending only on the seed, potentially end up redundant, we might want to try to re-seed a few times */
+			while (--redundancy_tries) {
+				/* Piece together a 32-bit random seed (possibly overwriting the one we already have, but easiest way for this loop) */
 				o_ptr->name3 = (u32b)rand_int(0xFFFF) << 16;
 				o_ptr->name3 += rand_int(0xFFFF);
+
+				/* Check for 100%-redundant ego power, ie we didn't gain _anything_ from it.
+				  This kind of double-ego-redudancy really only concerns armour effectively. */
+				if (is_armour(o_ptr->tval)) {
+					u32b f1, f2, f3, f4, f5, f6, esp;
+					u32b f1b, f2b, f3b, f4b, f5b, f6b, espb;
+
+					o_bak.name2b = 0; /* Undo name2b from having been set for memcmp(), further below */
+					o_bak.name3 = o_ptr->name3; /* Both objects have to have the same seed */
+					object_flags(&o_bak, &f1, &f2, &f3, &f4, &f5, &f6, &esp);
+					object_flags(o_ptr, &f1b, &f2b, &f3b, &f4b, &f5b, &f6b, &espb);
+
+					/* Equalize unimportant fields for memcmp() check. */
+					o_bak.name2b = o_ptr->name2b;
+					o_bak.level = o_ptr->level;
+					o_bak.to_a = o_ptr->to_a; /* +AC gain from ego power is not significant enough to warrant acknowledging a difference */
+					 /* The memcmp check is actually not really important, could just be removed.
+					    Although +pval might be quite nice, ie making a difference, this would effectively only happen on weapons, not on armour. */
+					if (memcmp(o_ptr, &o_bak, sizeof(object_type)) == 0
+					     /* Gain of flags is the main thing we're after, for armour: */
+					    && f1 == f1b && f2 == f2b && f3 == f3b && f4 == f4b && f5 == f5b && f6 == f6b && esp == espb)
+						continue;
+				}
+				/* Double-ego made a difference */
+				break;
 			}
+			/* Double-ego good to go */
 			break;
 		}
 	}
@@ -4773,13 +4851,11 @@ static void a_m_aux_1(object_type *o_ptr, int level, int power, u32b resf) {
 	/* Very good */
 	if (power > 1) {
 		/* Make ego item */
-//		if (!rand_int(RANDART_WEAPON) && (o_ptr->tval != TV_TRAPKIT)) create_artifact(o_ptr, FALSE, TRUE);	else
 		make_ego_item(level, o_ptr, TRUE, resf);
 	} else if (power < -1) {
 		/* Make ego item */
 		make_ego_item(level, o_ptr, FALSE, resf);
 	}
-
 	/* Good */
 	if ((power > 0) && (o_ptr->tval != TV_MSTAFF)) {
 		/* Enchant */
@@ -4830,9 +4906,7 @@ static void a_m_aux_1(object_type *o_ptr, int level, int power, u32b resf) {
 				break;
 			}
 
-//			if ((power == 1) && !o_ptr->name2 && o_ptr->sval != SV_AMMO_MAGIC)
 			else if ((power == 1) && !o_ptr->name2) {
-//				if (randint(100) < 7)
 				if (randint(500) < level + 5) {
 					/* Exploding missile */
 					int power[27] = { GF_ELEC, GF_POIS, GF_ACID,
@@ -4845,7 +4919,6 @@ static void a_m_aux_1(object_type *o_ptr, int level, int power, u32b resf) {
 						GF_TURN_ALL, GF_NUKE, //GF_STUN,
 						GF_DISINTEGRATE, GF_HELLFIRE };
 
-						//                                o_ptr->pval2 = power[rand_int(25)];
 					o_ptr->pval = power[rand_int(27)];
 				}
 			}
@@ -4904,7 +4977,6 @@ static void a_m_aux_2(object_type *o_ptr, int level, int power, u32b resf) {
 	/* Very good */
 	if (power > 1) {
 		/* Make ego item */
-//		if (!rand_int(RANDART_ARMOR)) create_artifact(o_ptr, FALSE, TRUE);	else
 		make_ego_item(level, o_ptr, TRUE, resf);
 	} else if (power < -1) {
 		/* Make ego item */
@@ -4987,9 +5059,6 @@ static void a_m_aux_2(object_type *o_ptr, int level, int power, u32b resf) {
 
 					if (!r_ptr->name) continue;
 					if (!r_ptr->rarity) continue;
-					// if (r_ptr->flags1 & RF1_UNIQUE) continue;
-					// if (r_ptr->level >= level + (power * 5)) continue;
-					//if (!mon_allowed(r_ptr)) continue;
 					if (!mon_allowed_chance(r_ptr)) continue;
 
 					break;
@@ -6567,6 +6636,12 @@ void determine_level_req(int level, object_type *o_ptr) {
 	    (o_ptr->sval == SV_POTION_EXPERIENCE) ||
 	    (o_ptr->sval == SV_POTION_LEARNING) ||
 	    (o_ptr->sval == SV_POTION_INVULNERABILITY))) o_ptr->level = 0;
+	if (o_ptr->tval == TV_JUNK && o_ptr->sval == SV_GLASS_SHARD) o_ptr->level = 0;
+#ifdef ENABLE_EXCAVATION
+// #ifdef EXCAVATION_IDDC_ONLY --actually always level 0, since it can be dropped by monsters too
+	if (o_ptr->tval == TV_TOOL && o_ptr->sval == SV_TOOL_GRINDER) o_ptr->level = 0;
+// #endif
+#endif
 	if ((o_ptr->tval == TV_SCROLL) && (o_ptr->sval == SV_SCROLL_TRAP_CREATION) && (o_ptr->level < 20)) o_ptr->level = 20;
 	if ((o_ptr->tval == TV_SCROLL) && (o_ptr->sval == SV_SCROLL_FIRE) && (o_ptr->level < 30)) o_ptr->level = 30;
 	if ((o_ptr->tval == TV_SCROLL) && (o_ptr->sval == SV_SCROLL_ICE) && (o_ptr->level < 30)) o_ptr->level = 30;
@@ -7853,7 +7928,7 @@ void place_object(int Ind, struct worldpos *wpos, int y, int x, bool good, bool 
 
 /* Like place_object(), but doesn't actually drop the object to the floor -  C. Blue */
 void generate_object(int Ind, object_type *o_ptr, struct worldpos *wpos, bool good, bool great, bool verygreat, u32b resf, obj_theme theme, int luck) {
-	int prob, base, tmp_luck, i, dlev;;
+	int prob, base, tmp_luck, i, dlev;
 	int tries = 0, k_idx;
 	dungeon_type *d_ptr;
 
@@ -9586,9 +9661,11 @@ static bool dropped_the_one_ring(struct worldpos *wpos, cave_type *c_ptr) {
  * a "drop location", and several functions to actually "drop" an object.
  *
  * XXX XXX XXX Consider allowing objects to combine on the ground.
+ *
+ * Returns -1 for 'legal item death' (burnt up or just broke)
+ * Returns -2 for 'code-limits item death' (no room, no cave paranoi)
  */
-/* XXX XXX XXX DIRTY! DIRTY! DIRTY!		- Jir - */
-//#define DROP_KILL_NOTE /* todo: needs adjustments - see below */
+#define DROP_KILL_NOTE /* todo: needs adjustments - see below */
 #define DROP_ON_STAIRS_IN_EMERGENCY
 s16b drop_near(int Ind, object_type *o_ptr, int chance, struct worldpos *wpos, int y, int x) {
 	int k, d, ny, nx, i, s;	// , y1, x1
@@ -9604,7 +9681,7 @@ s16b drop_near(int Ind, object_type *o_ptr, int chance, struct worldpos *wpos, i
 	/* for destruction checks */
 	bool do_kill = FALSE;
 #ifdef DROP_KILL_NOTE
-	bool is_potion = FALSE, plural = FALSE;
+	bool is_potion = FALSE, is_flask = FALSE, plural = FALSE;
 	cptr note_kill = NULL;
 #endif
 #ifdef DROP_ON_STAIRS_IN_EMERGENCY
@@ -9619,7 +9696,13 @@ s16b drop_near(int Ind, object_type *o_ptr, int chance, struct worldpos *wpos, i
 	monster_race *r_ptr;
 
 
-	if (!(zcave = getcave(wpos))) return(-1);
+	/* No longer embedded (if item came out of a monster trap) */
+	o_ptr->embed = 0;
+	/* No longer held by monster (paranoia?) */
+	o_ptr->held_m_idx = 0;
+
+
+	if (!(zcave = getcave(wpos))) return(-2);
 
 	/* Handle normal "breakage" */
 	if (!arts && magik(chance)) {
@@ -9805,7 +9888,7 @@ s16b drop_near(int Ind, object_type *o_ptr, int chance, struct worldpos *wpos, i
 			    o_name);
 		}
 
-		return (-1);
+		return (-2);
 	}
 
 	ny = by;
@@ -9818,6 +9901,7 @@ s16b drop_near(int Ind, object_type *o_ptr, int chance, struct worldpos *wpos, i
 	object_flags(o_ptr, &f1, &f2, &f3, &f4, &f5, &f6, &esp);
 #ifdef DROP_KILL_NOTE
 	if (o_ptr->tval == TV_POTION) is_potion = TRUE;
+	if (o_ptr->tval == TV_FLASK) is_flask = TRUE;
 	if (o_ptr->number > 1) plural = TRUE;
 #endif
 	switch (c_ptr->feat) {
@@ -9841,7 +9925,7 @@ s16b drop_near(int Ind, object_type *o_ptr, int chance, struct worldpos *wpos, i
 		if (hates_fire(o_ptr)) {
 			do_kill = TRUE;
 #ifdef DROP_KILL_NOTE
-			note_kill = is_potion ? (plural ? " evaporate!" : " evaporates!") : (plural ? " burn up!" : " burns up!");
+			note_kill = (is_potion || is_flask) ? (plural ? " evaporate!" : " evaporates!") : (plural ? " burn up!" : " burns up!");
 #endif
 			if (f3 & TR3_IGNORE_FIRE) do_kill = FALSE;
 		}
@@ -9849,24 +9933,26 @@ s16b drop_near(int Ind, object_type *o_ptr, int chance, struct worldpos *wpos, i
 	}
 
 	if (do_kill) {
-#ifdef DROP_KILL_NOTE //needs adjustments
+#ifdef DROP_KILL_NOTE
 		/* Effect "observed" */
-		if (!quiet && p_ptr->obj_vis[this_o_idx]) obvious = TRUE;
+		bool seen = Ind ? player_can_see_bold(Ind, ny, nx) : FALSE;
+		int who = Ind ? -Ind : PROJECTOR_POTION;
+		char o_name[ONAME_LEN];
+
+		object_desc(Ind, o_name, o_ptr, FALSE, 3);
+
 		/* Artifacts, and other objects, get to resist */
-		if (is_art || ignore) {
+		if (like_artifact_p(o_ptr)) {
 			/* Observe the resist */
-			if (!quiet && p_ptr->obj_vis[this_o_idx]) {
-				msg_format(Ind, "The %s %s unaffected!",
-				o_name, (plural ? "are" : "is"));
-			}
+			if (seen) msg_format(Ind, "The %s %s unaffected!", o_name, (plural ? "are" : "is"));
 		/* Kill it */
 		} else {
 			/* Describe if needed */
-			if (!quiet && p_ptr->obj_vis[this_o_idx] && note_kill)
-				msg_format(Ind, "\377oThe %s%s", o_name, note_kill);
+			if (seen && note_kill) msg_format(Ind, "\377oThe %s%s", o_name, note_kill);
 			/* Potions produce effects when 'shattered' */
-			if (is_potion) (void)potion_smash_effect(who, wpos, ny, nx, o_sval);
-			if (!quiet) everyone_lite_spot(wpos, ny, nx);
+			if (is_potion) (void)potion_smash_effect(who, wpos, ny, nx, o_ptr->sval);
+			else if (is_flask) (void)potion_smash_effect(who, wpos, ny, nx, o_ptr->sval + 200);
+			//everyone_lite_spot(wpos, ny, nx);
 		}
 #endif
 		if (true_artifact_p(o_ptr)) handle_art_d(o_ptr->name1); /* just paranoia here */
@@ -9874,25 +9960,23 @@ s16b drop_near(int Ind, object_type *o_ptr, int chance, struct worldpos *wpos, i
 
 		/* Extra logging for those cases of "where did my randart disappear to??1" */
 		if (o_ptr->name1 == ART_RANDART) {
-			char o_name[ONAME_LEN];
-
 			object_desc(0, o_name, o_ptr, TRUE, 3);
-
 			s_printf("%s (BUG?) drop_near kills random artifact at (%d,%d,%d):\n  %s\n",
 			    showtime(),
 			    wpos->wx, wpos->wy, wpos->wz,
 			    o_name);
+
+			return -2;
 		}
 		/* err, this shouldn't happen? but we DO call handle_art_d() above..? */
 		else if (o_ptr->name1) {
-			char o_name[ONAME_LEN];
-
 			object_desc(0, o_name, o_ptr, TRUE, 3);
-
 			s_printf("%s (BUG?) drop_near kills true artifact at (%d,%d,%d):\n  %s\n",
 			    showtime(),
 			    wpos->wx, wpos->wy, wpos->wz,
 			    o_name);
+
+			return -2;
 		}
 		return (-1);
 	}
@@ -9999,7 +10083,7 @@ s16b drop_near(int Ind, object_type *o_ptr, int chance, struct worldpos *wpos, i
 					    o_name);
 				}
 
-				return (-1);
+				return (-2);
 			}
 		}
 #endif
@@ -10060,19 +10144,19 @@ s16b drop_near(int Ind, object_type *o_ptr, int chance, struct worldpos *wpos, i
 			/* No monster */
 			o_ptr->held_m_idx = 0;
 
-			/* Build a stack */
+			/* Build a stack if required, otherwise this is zero anyway */
 			o_ptr->next_o_idx = c_ptr->o_idx;
-#ifdef MAX_ITEMS_STACKING
-			if (c_ptr->o_idx && MAX_ITEMS_STACKING != 0)
+//#ifdef MAX_ITEMS_STACKING
+			if (c_ptr->o_idx) // && MAX_ITEMS_STACKING != 0)
 				o_ptr->stack_pos = o_list[c_ptr->o_idx].stack_pos + 1;
 			else
-#endif
+//#endif
 				o_ptr->stack_pos = 0; /* first object on this grid */
 
 			/* Place */
 			//c_ptr = &zcave[ny][nx];
 			c_ptr->o_idx = o_idx;
-			nothing_test2(c_ptr, nx, ny, wpos, 2);
+			nothing_test2(c_ptr, nx, ny, wpos, 8); //was 2
 
 			/* Clear visibility flags */
 			for (k = 1; k <= NumPlayers; k++) {
@@ -10116,6 +10200,7 @@ s16b drop_near(int Ind, object_type *o_ptr, int chance, struct worldpos *wpos, i
 				    wpos->wx, wpos->wy, wpos->wz,
 				    o_name);
 			}
+			return -2; //CRITICAL - server out of object space?
 		}
 	}
 
@@ -10851,19 +10936,32 @@ s16b inven_carry(int Ind, object_type *o_ptr) {
 
 /* Helper function for character birth: Equip starter items automatically. */
 void inven_carry_equip(int Ind, object_type *o_ptr) {
-#if 1
 	int item = inven_carry(Ind, o_ptr);
 
-	if (wearable_p(o_ptr)
-	    /* default starter ranged weapon is a bow, so equip magic arrow together with it */
-	    && (!is_ammo(o_ptr->tval) || o_ptr->tval == TV_ARROW)) {
+	if (!wearable_p(o_ptr)) return;
+
+	if (!is_ammo(o_ptr->tval)) {
+		suppress_message = TRUE;
+		do_cmd_wield(Ind, item, 0x0);
+		suppress_message = FALSE;
+		/* make the torch somewhat 'used' */
+		if (o_ptr->tval == TV_LITE && o_ptr->sval == SV_LITE_TORCH) Players[Ind]->inventory[INVEN_LITE].timeout -= rand_int(FUEL_TORCH / 10);
+	} else {
+		switch (o_ptr->tval) { /* No need to check INVEN_BOW for tval actually */
+		case TV_SHOT:
+			if (Players[Ind]->inventory[INVEN_BOW].sval != SV_SLING) return;
+			break;
+		case TV_ARROW:
+			if (Players[Ind]->inventory[INVEN_BOW].sval != SV_SHORT_BOW && Players[Ind]->inventory[INVEN_BOW].sval != SV_LONG_BOW) return;
+			break;
+		case TV_BOLT:
+			if (Players[Ind]->inventory[INVEN_BOW].sval != SV_LIGHT_XBOW && Players[Ind]->inventory[INVEN_BOW].sval != SV_HEAVY_XBOW) return;
+			break;
+		}
 		suppress_message = TRUE;
 		do_cmd_wield(Ind, item, 0x0);
 		suppress_message = FALSE;
 	}
-#else
-	inven_carry(Ind, o_ptr);
-#endif
 }
 
 
@@ -11153,7 +11251,18 @@ void process_objects(void) {
 			/* Reset it from 'charging' state to charged state */
 			if (!o_ptr->pval) o_ptr->bpval = 0;
 #endif
+			continue;
 		}
+#ifdef ENABLE_EXCAVATION
+		if (o_ptr->tval == TV_CHARGE && o_ptr->timeout) {
+			o_ptr->timeout--;
+			if (!o_ptr->timeout) {
+				detonate_charge(o_ptr);
+				delete_object_idx(i, TRUE);
+				continue;
+			}
+		}
+#endif
 	}
 
 #if 1 /* experimental: also process items in list houses */
@@ -11240,7 +11349,7 @@ void process_objects(void) {
  * to the objects in the "o_list".
  */
 void setup_objects(void) {
-	int i;
+	int i, q_idx;
 	cave_type **zcave;
 	object_type *o_ptr;
 
@@ -11255,19 +11364,20 @@ void setup_objects(void) {
 
 		/* Skip carried objects */
 		if (o_ptr->held_m_idx) continue;
+		/* Skip objects in monster traps */
+		if (o_ptr->embed) continue;
 
-//		if (!in_bounds2(&o_ptr->wpos, o_ptr->iy, o_ptr->ix)) continue;
-		if (in_bounds_array(o_ptr->iy, o_ptr->ix))
+		/* Paranoia? */
+		if (!in_bounds_array(o_ptr->iy, o_ptr->ix)) continue;
 
-#if 0	// excise_object_idx() should do this
-		/* Build the stack */
-		if (j = zcave[o_ptr->iy][o_ptr->ix].o_idx)
-			o_ptr->next_o_idx = j;
-		else o_ptr->next_o_idx = 0;
-#endif	// 0
+		/* Item stacks should survive dungeonlevel-detachtment
+		   consistently and not need to get rebuilt here? */
 
-		/* Set the o_idx correctly */
-		zcave[o_ptr->iy][o_ptr->ix].o_idx = i;
+		/* Just need to connect the top-most item stack item back to
+		   the grid, using MAX_ITEMS_STACKING code for that */
+		if (!(q_idx = zcave[o_ptr->iy][o_ptr->ix].o_idx)
+		    || o_list[q_idx].stack_pos < o_ptr->stack_pos)
+			zcave[o_ptr->iy][o_ptr->ix].o_idx = i;
 	}
 }
 
@@ -11850,11 +11960,19 @@ void erase_artifact(int a_idx) {
 			return;
 		}
 
+		/* Check monster traps for artifact trap kits / load */
+		if (o_ptr->embed == 1) {
+			s_printf("FLUENT_ARTIFACT_RESETS: %d - monster trap '%s'\n", a_idx, o_name);
+			delete_object_idx(i, TRUE);
+			msg_broadcast_format(0, "\374\377M* \377U%s has been lost once more. \377M*", o_name_short);
+			return;
+		}
+
 #ifdef PLAYER_STORES
 		/* Log removal of player store items - this code only applies if server rules allow dropping true artifacts in houses.
 		   In case the cave wasn't allocated, the delete_object_idx() call below won't remove it from pstore lists, so we have to do it now.
 		   Note: This can be a false alarm in case the item is inscribed '@S' but is not actually inside a player house. */
-		if (!getcave(&o_ptr->wpos) &&
+		if (!getcave(&o_ptr->wpos) && !o_ptr->held_m_idx && !o_ptr->embed && 
 		    o_ptr->note && strstr(quark_str(o_ptr->note), "@S")) {
 			//char o_name[ONAME_LEN];//, p_name[NAME_LEN];
 			//object_desc(0, o_name, o_ptr, TRUE, 3);
@@ -12000,32 +12118,49 @@ void erase_artifact(int a_idx) {
 /* Modify a particular existing type of item in the whole game world. - C. Blue
    (added for Living Lightning drop 'Sky DSM of Imm' to become a canonical randart Sky DSM instead) */
 /* Helper function - hard-coded stuff - replacement item parameters */
-static void hack_particular_item_aux(object_type *qq_ptr, struct worldpos xwpos) {
+static void hack_particular_item_aux(object_type *o_ptr, struct worldpos xwpos) {
+#if 0
+	/* (for sky dsm drop from living lightning) */
 	int tries;
 	artifact_type *xa_ptr;
 
-	object_wipe(qq_ptr);
-	invcopy(qq_ptr, lookup_kind(TV_DRAG_ARMOR, SV_DRAGON_SKY));
-	qq_ptr->number = 1;
-	qq_ptr->name1 = ART_RANDART;
+	object_wipe(o_ptr);
+	invcopy(o_ptr, lookup_kind(TV_DRAG_ARMOR, SV_DRAGON_SKY));
+	o_ptr->number = 1;
+	o_ptr->name1 = ART_RANDART;
 	tries = 500;
 	while (tries) {
 		/* Piece together a 32-bit random seed */
-		qq_ptr->name3 = (u32b)rand_int(0xFFFF) << 16;
-		qq_ptr->name3 += rand_int(0xFFFF);
-		apply_magic(&xwpos, qq_ptr, 150, TRUE, TRUE, TRUE, TRUE, RESF_FORCERANDART | RESF_NOTRUEART | RESF_LIFE);
+		o_ptr->name3 = (u32b)rand_int(0xFFFF) << 16;
+		o_ptr->name3 += rand_int(0xFFFF);
+		apply_magic(&xwpos, o_ptr, 150, TRUE, TRUE, TRUE, TRUE, RESF_FORCERANDART | RESF_NOTRUEART | RESF_LIFE);
 
-		xa_ptr = randart_make(qq_ptr);
+		xa_ptr = randart_make(o_ptr);
 		if (artifact_power(xa_ptr) >= 105 + 5 && /* at least +1 new mod gained; and +extra bonus boost */
-		    qq_ptr->to_a > 0 && /* not cursed */
+		    o_ptr->to_a > 0 && /* not cursed */
 		    !(xa_ptr->flags3 & (TR3_AGGRAVATE | TR3_NO_MAGIC)))
 			break;
 		tries--;
 	}
-	qq_ptr->level = 0;
+	o_ptr->level = 0;
 	if (!tries) s_printf("hack_particular_item_aux: Re-rolling out of tries!\n");
+#endif
+
+#if 0
+	/* seal outdated junk */
+	o_ptr->tval2 = o_ptr->tval;
+	o_ptr->sval2 = o_ptr->sval;
+	o_ptr->tval = TV_SPECIAL;
+	o_ptr->sval = SV_SEAL;
+#else
+	/* shards -> pottery! */
+	o_ptr->sval = SV_POTTERY;
+#endif
+	o_ptr->k_idx = lookup_kind(o_ptr->tval, o_ptr->sval);
 }
-static void hack_particular_item_prepare_wpos(struct worldpos *xwpos) {
+static void hack_particular_item_prepare_wpos(struct worldpos *wpos) {
+#if 0
+	/* (for sky dsm drop from living lightning) */
 	int x, y;
 	dungeon_type *d_ptr;
 
@@ -12033,23 +12168,36 @@ static void hack_particular_item_prepare_wpos(struct worldpos *xwpos) {
 	for (x = 0; x < MAX_WILD_X; x++) {
 		if ((d_ptr = wild_info[y][x].tower)) {
 			if (d_ptr->type == DI_CLOUD_PLANES) {
-				xwpos->wx = x;
-				xwpos->wy = y;
-				xwpos->wz = 20;
+				wpos->wx = x;
+				wpos->wy = y;
+				wpos->wz = 20;
 			}
 		}
 		if ((d_ptr = wild_info[y][x].dungeon)) {
 			if (d_ptr->type == DI_CLOUD_PLANES) {
-				xwpos->wx = x;
-				xwpos->wy = y;
-				xwpos->wz = 20;
+				wpos->wx = x;
+				wpos->wy = y;
+				wpos->wz = 20;
 			}
 		}
 	}
+	return;
+#endif
+
+	/* whatever */
+	wpos->wx = 32;
+	wpos->wy = 32;
+	wpos->wz = 0;
 }
 static bool hack_particular_item_cmp(object_type *o_ptr) {
+#if 0
+	/* (for sky dsm drop from living lightning) */
 	//return (o_ptr->tval != TV_DRAG_ARMOR || o_ptr->sval != SV_DRAGON_SKY || o_ptr->name2 != EGO_IMMUNE);
 	return (o_ptr->tval != TV_DRAG_ARMOR || o_ptr->sval != SV_DRAGON_SKY || o_ptr->name1 != ART_RANDART || o_ptr->level != 0);
+#endif
+
+	/* for disabling accidentally generated old junk */
+	return (o_ptr->tval != TV_JUNK || o_ptr->sval != SV_GLASS_SHARD);
 }
 void hack_particular_item(void) {
 	int i, this_o_idx, next_o_idx;
@@ -12062,11 +12210,11 @@ void hack_particular_item(void) {
 
 	int found = 0;
 
-	struct worldpos xwpos;
+	struct worldpos xwpos = { -1, 0, 0 };
 
 	xwpos.wx = xwpos.wy = xwpos.wz = 0;
 	hack_particular_item_prepare_wpos(&xwpos);
-	if (!xwpos.wz) {
+	if (xwpos.wx == -1) {
 		s_printf("hack_particular_item(): failed to prepare wpos!\n");
 		return;
 	}
@@ -12105,9 +12253,11 @@ void hack_particular_item(void) {
 				}
 			}
 		} else {
-			q_ptr = &o_list[i];
-			s_printf(" found on the floor\n");
-			hack_particular_item_aux(q_ptr, xwpos);
+			/* Check monster traps for artifact trap kits / load */
+			if (o_ptr->embed == 1) s_printf(" found in monster trap\n");
+			/* Just on the floor */
+			else s_printf(" found on the floor\n");
+			hack_particular_item_aux(o_ptr, xwpos);
 			found++;
 		}
 	}
@@ -12124,11 +12274,23 @@ void hack_particular_item(void) {
 				s_printf(" found in live player '%s'\n", p_ptr->name);
 				hack_particular_item_aux(o_ptr, xwpos);
 				found++;
+				/* Update the item in his inventory */
+				p_ptr->window |= PW_INVEN;
 			}
 		}
 	}
 
-	/* hack */
+	/* Check merchant mail */
+	for (i = 0; i < MAX_MERCHANT_MAILS; i++) {
+		if (mail_sender[i][0]) continue;
+		if (hack_particular_item_cmp(&mail_forge[i])) continue;
+
+		s_printf(" found in merchant mail of '%s'\n", mail_target[i]);
+		hack_particular_item_aux(&mail_forge[i], xwpos);
+		found++;
+	}
+
+	/* hack - Check all players in the hash table */
 	NumPlayers++;
 	MAKE(Players[NumPlayers], player_type);
 	p_ptr = Players[NumPlayers];
@@ -12136,6 +12298,15 @@ void hack_particular_item(void) {
 	for (slot = 0; slot < NUM_HASH_ENTRIES; slot++) {
 		ptr = hash_table[slot];
 		while (ptr) {
+			/* skip savegames of players that are online anyway - they already got modified above */
+			for (i = 1; i <= NumPlayers; i++) {
+				if (Players[i]->conn == NOT_CONNECTED) continue;
+				if (strcmp(Players[i]->name, ptr->name)) continue;
+				ptr = ptr->next;
+				break;
+			}
+			if (i != NumPlayers + 1) continue;
+
 			/* clear his data (especially inventory) */
 			o_ptr = p_ptr->inventory;
 			WIPE(p_ptr, player_type);
@@ -12150,6 +12321,7 @@ void hack_particular_item(void) {
 			if (!load_player(NumPlayers)) {
 				/* bad fail */
 				s_printf(" load_player '%s' failed\n", p_ptr->name);
+				s_printf("hack_particular_item: found+replaced %d occurances\n", found);
 				/* unhack */
 				C_FREE(p_ptr->inventory, INVEN_TOTAL, object_type);
 				KILL(p_ptr, player_type);
@@ -12236,15 +12408,29 @@ void inverse_cursed(object_type *o_ptr) {
 	if (!is_armour(o_ptr->tval) && o_ptr->to_a > 15) o_ptr->to_a = 15;
 
 	/* reverse +pval/bpval */
-	if (o_ptr->pval < 0) {
-		o_ptr->pval_org = o_ptr->pval;
-		o_ptr->pval = -(o_ptr->pval - 3) / 4; //the evil gods are pleased '>_>.. (thinking of +LUCK)
-		if (o_ptr->pval > 3) o_ptr->pval = 3; //thinking EA/Life, but just paranoia really..
-	}
-	if (o_ptr->bpval < 0) {
-		o_ptr->bpval_org = o_ptr->bpval;
-		o_ptr->bpval = -(o_ptr->bpval - 3) / 4; //the evil gods are pleased '>_>.. (thinking of +LUCK)
-		if (o_ptr->bpval > 3) o_ptr->bpval = 3; //thinking EA/Life, but just paranoia really..
+	/* Be more lenient for items that only increase attributes */
+	if ((f1 & TR1_PVAL_MASK) == (f1 & TR1_ATTR_MASK) && !(f5 & TR5_PVAL_MASK)) {
+		if (o_ptr->pval < 0) {
+			o_ptr->pval_org = o_ptr->pval;
+			o_ptr->pval = (-o_ptr->pval) / 2 + 1;
+			if (o_ptr->pval > 5) o_ptr->pval = 5;
+		}
+		if (o_ptr->bpval < 0) {
+			o_ptr->bpval_org = o_ptr->bpval;
+			o_ptr->bpval = (-o_ptr->bpval) / 2 + 1;
+			if (o_ptr->bpval > 5) o_ptr->bpval = 5;
+		}
+	} else {
+		if (o_ptr->pval < 0) {
+			o_ptr->pval_org = o_ptr->pval;
+			o_ptr->pval = -(o_ptr->pval - 3) / 4; //the evil gods are pleased '>_>.. (thinking of +LUCK)
+			if (o_ptr->pval > 3) o_ptr->pval = 3; //thinking EA/Life, but just paranoia really..
+		}
+		if (o_ptr->bpval < 0) {
+			o_ptr->bpval_org = o_ptr->bpval;
+			o_ptr->bpval = -(o_ptr->bpval - 3) / 4; //the evil gods are pleased '>_>.. (thinking of +LUCK)
+			if (o_ptr->bpval > 3) o_ptr->bpval = 3; //thinking EA/Life, but just paranoia really..
+		}
 	}
 }
 /* Reverse the boni back to negative when a vampire takes off a heavily cursed item (or its curse gets broken),

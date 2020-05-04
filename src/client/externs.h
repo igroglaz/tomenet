@@ -32,6 +32,7 @@ extern bool ask_for_bigmap(void);
 extern void get_screen_font_name(char *buf);
 extern void animate_palette(void);
 extern void set_palette(byte c, byte r, byte g, byte b);
+extern void get_palette(byte c, byte *r, byte *g, byte *b);
 #endif
 
 #ifdef USE_XAW
@@ -213,6 +214,8 @@ extern bool item_tester_hook_rune(object_type *o_ptr);
 extern bool item_tester_hook_armour_no_shield(object_type *o_ptr);
 extern bool item_tester_hook_id(object_type *o_ptr);
 extern bool item_tester_hook_starid(object_type *o_ptr);
+extern bool item_tester_hook_chemical(object_type *o_ptr); //ENABLE_EXCAVATION
+
 
 extern int special_line_type;
 extern int special_page_size;
@@ -509,7 +512,7 @@ extern void show_motd(int delay);
 extern void peruse_file(void);
 extern errr my_fgets(FILE *fff, char *buf, huge n);
 extern errr my_fgets2(FILE *fff, char **line, int *n);
-extern errr file_character(cptr name, bool full);
+extern errr file_character(cptr name, bool quiet);
 extern bool my_freadable(cptr file);
 extern errr get_safe_file(char *buf, cptr file);
 extern void xhtml_screenshot(cptr name);
@@ -532,6 +535,7 @@ extern void monster_lore_aux(int ridx, int rlidx, char paste_lines[18][MSG_LEN])
 extern void monster_stats_aux(int ridx, int rlidx, char paste_lines[18][MSG_LEN]);
 extern void artifact_lore_aux(int aidx, int alidx, char paste_lines[18][MSG_LEN]);
 extern void artifact_stats_aux(int aidx, int alidx, char paste_lines[18][MSG_LEN]);
+extern bool check_dir2(cptr s);
 
 /* c-inven.c */
 extern s16b index_to_label(int i);
@@ -556,6 +560,7 @@ extern bool macro_del(cptr pat);
 extern char inkey(void);
 extern void keymap_init(void);
 extern void bell(void);
+extern void bell_silent(void);
 extern int page(void);
 extern int warning_page(void);
 extern void c_prt(byte attr, cptr str, int row, int col);
@@ -596,6 +601,8 @@ extern void do_cmd_options(void);
 extern void c_close_game(cptr reason);
 extern void my_memfrob(void *s, int n);
 extern bool is_newer_than(version_type *version, int major, int minor, int patch, int extra, int branch, int build);
+extern bool is_older_than(version_type *version, int major, int minor, int patch, int extra, int branch, int build);
+extern bool is_same_as(version_type *version, int major, int minor, int patch, int extra, int branch, int build);
 #ifdef USE_SOUND_2010
 extern void interact_audio(void);
 extern void audio_pack_selector(void);
@@ -606,7 +613,7 @@ extern void toggle_weather(void);
 extern bool sound_bell(void);
 extern bool sound_page(void);
 extern bool sound_warning(void);
-extern int bell_sound_idx, page_sound_idx, warning_sound_idx, rain1_sound_idx, rain2_sound_idx, snow1_sound_idx, snow2_sound_idx, browse_sound_idx, browsebook_sound_idx;
+extern int bell_sound_idx, page_sound_idx, warning_sound_idx, rain1_sound_idx, rain2_sound_idx, snow1_sound_idx, snow2_sound_idx, browse_sound_idx, browsebook_sound_idx, thunder_sound_idx;
 #endif
 extern errr options_dump(cptr fname);
 extern bool parse_macro;
@@ -621,8 +628,9 @@ extern void clear_topline_forced(void);
 extern void restore_prompt(void); /* DONT_CLEAR_TOPLINE_IF_AVOIDABLE */
 extern u32b parse_color_code(const char *str);
 extern void handle_process_font_file(void);
-
 extern void sync_sleep(int milliseconds);
+extern char original_commands(char command);
+extern char roguelike_commands(char command);
 
 /* c-store.c */
 extern bool leave_store;
@@ -704,6 +712,7 @@ extern generic_term_info term_prefs[10];
 
 /* nclient.c (former netclient.c) */
 extern int ticks, ticks10, existing_characters, command_confirmed;
+extern int animate_lightning, animate_lightning_vol;
 extern void do_flicker(void);
 extern void do_mail(void);
 extern void update_ticks(void);
@@ -926,6 +935,7 @@ extern void get_screen_font_name(char *buf);
 extern bool win_dontmoveuser;
 extern void animate_palette(void);
 extern void set_palette(byte c, byte r, byte g, byte b);
+extern void get_palette(byte c, byte *r, byte *g, byte *b);
 extern void store_audiopackfolders(void);
 #endif
 extern void store_crecedentials(void);

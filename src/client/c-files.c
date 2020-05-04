@@ -1394,7 +1394,7 @@ void peruse_file(void) {
  * XXX XXX XXX Allow the "full" flag to dump additional info,
  * and trigger its usage from various places in the code.
  */
-errr file_character(cptr name, bool full) {
+errr file_character(cptr name, bool quiet) {
 	int		i, x, y;
 	byte		a;
 	char		c;
@@ -1402,7 +1402,6 @@ errr file_character(cptr name, bool full) {
 	int		fd = -1;
 	FILE		*fff = NULL;
 	char		buf[1024], *cp, linebuf[1024];
-	(void) full; /* suppress compiler warning */
 
 	/* Build the filename */
 	path_build(buf, 1024, ANGBAND_DIR_USER, name);
@@ -1524,7 +1523,7 @@ errr file_character(cptr name, bool full) {
 	if (screen_icky) Term_switch(0);
 	/* skip top line, already in 'last messages' if any at all */
 	for (y = 1; y < Term->hgt; y++) {
-		for (x = 0; x < Term->wid; x++) {
+		for (x = 0; x < Term->wid - 1; x++) { /* -1: Hack for angband.oook.cz ladder: 80 chars would cause extra linebreaks there :/ So we just discard the final column.. */
 			(void)(Term_what(x, y, &a, &c));
 
 			switch (c) {
@@ -1575,7 +1574,7 @@ errr file_character(cptr name, bool full) {
 	Term_load();
 
 	/* Message */
-	c_msg_print("Character dump successful.");
+	if (!quiet) c_msg_print("Character dump successful.");
 	clear_topline_forced();
 
 	/* Success */

@@ -1352,7 +1352,7 @@ static cptr st_info_flags1[] = {
 	"SPECIAL",
 	"BUY67",
 	"NO_DISCOUNT1",
-	"XXX",
+	"SELL67",
 	"ZEROLEVEL"
 };
 
@@ -1368,19 +1368,19 @@ static cptr st_info_flags1[] = {
 	a final '$' tests for <condition>,
 	a final '!' tests for NOT<condition> */
 static bool invalid_server_conditions(char *buf) {
-	char cc[1024 + 1], m[20];
-	int ccn = 1;
+	char cc[1024 + 1], m[MAX_CHARS];
 	bool invalid = FALSE;
 
 	/* while loop to allow multiple macros appended to each other in the same line! */
 	while (buf[0] == '$' || buf[0] == '%') {
 		bool negation = FALSE, ignore = (buf[0] == '%');
+		int ccn = 1;
 
 		/* read the tag between $...$ symbols */
 		while (buf[ccn] != '$' && buf[ccn] != '!' && buf[ccn] != '\0')
 			{ cc[ccn - 1] = buf[ccn]; ccn++; }
 
-		if (buf[ccn] == '\0') return TRUE; /* end of line reached, completely invalid */
+		if (buf[ccn] == '\0') return TRUE; /* error: end of line reached instead of completing the tag -> completely invalid */
 
 		/* inverted rule? means that tag is between $...! symbols */
 		if (buf[ccn] == '!') negation = TRUE;
@@ -1532,6 +1532,11 @@ if (!season_newyearseve) {
 #else
 		if (streq(m, "ENABLE_EXCAVATION") && negation) invalid = TRUE;
 #endif
+#ifndef EXCAVATION_IDDC_ONLY
+		if (streq(m, "EXCAVATION_IDDC_ONLY") && !negation) invalid = TRUE;
+#else
+		if (streq(m, "EXCAVATION_IDDC_ONLY") && negation) invalid = TRUE;
+#endif
 		/* List all known flags. If we hit an unknown flag, ignore the line by default! */
 		if (strcmp(m, "MAIN_SERVER") &&
 		    strcmp(m, "RPG_SERVER") &&
@@ -1555,6 +1560,7 @@ if (!season_newyearseve) {
 		    strcmp(m, "ENABLE_OHERETICISM") &&
 		    strcmp(m, "ENABLE_OUNLIFE") &&
 		    strcmp(m, "ENABLE_EXCAVATION") &&
+		    strcmp(m, "EXCAVATION_IDDC_ONLY") &&
 			TRUE)
 			invalid = TRUE;
 	}
@@ -8702,7 +8708,11 @@ errr init_q_info_txt(FILE *fp, char *buf) {
 			while (*c >= '0' && *c <= '9' && l < QI_REWARD_GOALS) {
 				j = atoi(c);
 				if (ABS(j) > QI_GOALS) return 1;
-				(void)init_quest_goal(error_idx, stage, j);
+				/* If j is 0 it means there is no goal, reward is to be handed out for free.
+				   Any other j gets its ABS value decremented in init_quest_goal() to form the real goal-index. */
+				if (j) (void)init_quest_goal(error_idx, stage, j);
+				/* In the goals index array, a 0-goal (free reward) is denoted as -1 (yeah it's a bit messy about 0, -1, j-- etc).
+				   (For j == 0 this is actually redundant as all goals are already initialised to -1 in init_quest_stage() anyway.) */
 				q_stage->goals_for_reward[reward][l] = ABS(j) - 1;
 
 				if (!(c = strchr(c, ':'))) break;
@@ -9095,6 +9105,7 @@ static errr process_dungeon_file_aux(char *buf, worldpos *wpos, int *yval, int *
 			else if (monster_index) {
 				summon_override_checks = SO_ALL; /* disable all checks */
 				place_monster_aux(wpos, y, x, monster_index, FALSE, FALSE, 0, 0);
+				if (zcave[y][x].m_idx > 0 && (zcave[y][x].info & CAVE_DECAL)) m_list[zcave[y][x].m_idx].status = M_STATUS_FRIENDLY;
 				//place_monster_one(wpos, y, x, monster_index, 0, 0, FALSE, 0, 0);
 				summon_override_checks = SO_NONE; /* re-enable default */
 			}

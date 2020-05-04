@@ -4389,26 +4389,42 @@ s_printf("ASTAR: 2 (no good moves, %d,%d,%d)\n", aoc, acc, turn);
 
 
 /* Is the monster willing to avoid that grid?	- Jir - */
+/* Not only avoid grids that currently have an effect, but also check if the grid had an effect on it previously
+   - except if it already hit us anyway because we're currently standing on a grid with the very same effect. */
+#define HEED_PAST_EFFECT
 static bool monster_is_safe(int m_idx, monster_type *m_ptr, monster_race *r_ptr, cave_type *c_ptr) {
 	effect_type *e_ptr;
 	//cptr name;
 	int dam;
 
-#if 1	/* moved for efficiency */
-	if (!c_ptr->effect) return (TRUE);
-	if (r_ptr->flags2 & RF2_STUPID) return (TRUE);
+	/* moved for efficiency */
+	if (!c_ptr->effect) {
+		cave_type **zcave = getcave(&m_ptr->wpos), *c0_ptr = &zcave[m_ptr->fy][m_ptr->fx];
+#ifndef HEED_PAST_EFFECT
+		return (TRUE);
+#else
+		/* Don't allow monsters to 'jump' wave effects with good timing (esp EFF_THINWAVE):
+		   Only allow a monster to enter a grid, if it didn't have the wave effect on it last turn either,
+		   or if the monster was already hit on its current grid by this very effect just now. */
+		if (!c_ptr->effect_past || c0_ptr->effect == c_ptr->effect_past) return TRUE;
+		if (r_ptr->flags2 & RF2_STUPID) return (TRUE);
+
+		e_ptr = &effects[c_ptr->effect_past];
+		if (e_ptr->who == m_idx) return (TRUE); /* It's mine :) */
+
+		dam = approx_damage(m_idx, e_ptr->dam, e_ptr->type);
+		return (m_ptr->hp >= dam * 20);
 #endif
+	}
+	if (r_ptr->flags2 & RF2_STUPID) return (TRUE);
 
 	e_ptr = &effects[c_ptr->effect];
 
 	/* It's mine :) */
 	if (e_ptr->who == m_idx) return (TRUE);
 
-	dam = e_ptr->dam;
-	//name = r_name_get(m_ptr);
-
 	/* Use new function 'approx_damage()' for this - C. Blue */
-	dam = approx_damage(m_idx, dam, e_ptr->type);
+	dam = approx_damage(m_idx, e_ptr->dam, e_ptr->type);
 
 	/* Was 30, now less exploitable, ie avoid pushing monsters around without them able to retaliate */
 	return (m_ptr->hp >= dam * 20);
@@ -7590,7 +7606,7 @@ static void process_monster(int Ind, int m_idx, bool force_random_movement) {
 				/* Forget the "field mark", if any */
 				everyone_forget_spot(wpos, ny, nx);
 
-				cave_set_feat_live(wpos, ny, nx, twall_erosion(wpos, ny, nx));
+				cave_set_feat_live(wpos, ny, nx, twall_erosion(wpos, ny, nx, FEAT_FLOOR));
 
 				/* Note changes to viewable region */
 				if (player_has_los_bold(Ind, ny, nx)) do_view = TRUE;
@@ -7674,9 +7690,7 @@ static void process_monster(int Ind, int m_idx, bool force_random_movement) {
 			everyone_forget_spot(wpos, ny, nx);
 
 			/* Create floor */
-//			c_ptr->feat = FEAT_FLOOR;
-			//c_ptr->feat = twall_erosion(wpos, ny, nx);
-			cave_set_feat_live(wpos, ny, nx, twall_erosion(wpos, ny, nx));
+			cave_set_feat_live(wpos, ny, nx, twall_erosion(wpos, ny, nx, FEAT_FLOOR));
 
 			/* Note changes to viewable region */
 			if (player_has_los_bold(Ind, ny, nx)) do_view = TRUE;
@@ -7787,7 +7801,7 @@ static void process_monster(int Ind, int m_idx, bool force_random_movement) {
 			/* Deal with doors in the way */
 			if (did_open_door || did_bash_door) {
 				/* Break down the door */
-				if (did_bash_door && (rand_int(100) < 50))
+				if (did_bash_door && magik(DOOR_BASH_BREAKAGE))
 					c_ptr->feat = FEAT_BROKEN;
 				/* Open the door */
 				else
@@ -8294,7 +8308,7 @@ static void process_monster(int Ind, int m_idx, bool force_random_movement) {
 
 			/* Check for monster trap */
 			if (c_ptr->feat == FEAT_MON_TRAP && mon_hit_trap(m_idx)) return;
-			
+
 			/* Explosive glyph? */
 			if (c_ptr->feat == FEAT_RUNE && warding_rune_break(m_idx)) return;
 
@@ -8633,8 +8647,7 @@ static void process_monster_pet(int Ind, int m_idx) {
 #endif
 
 			/* Create floor */
-//			c_ptr->feat = FEAT_FLOOR;
-			cave_set_feat_live(wpos, ny, nx, twall_erosion(wpos, ny, nx));
+			cave_set_feat_live(wpos, ny, nx, twall_erosion(wpos, ny, nx, FEAT_FLOOR));
 
 			/* Forget the "field mark", if any */
 			everyone_forget_spot(wpos, ny, nx);
@@ -8722,7 +8735,7 @@ static void process_monster_pet(int Ind, int m_idx) {
 			/* Deal with doors in the way */
 			if (did_open_door || did_bash_door) {
 				/* Break down the door */
-				if (did_bash_door && (rand_int(100) < 50))
+				if (did_bash_door && magik(DOOR_BASH_BREAKAGE))
 					c_ptr->feat = FEAT_BROKEN;
 				/* Open the door */
 				else
@@ -9072,8 +9085,7 @@ static void process_monster_golem(int Ind, int m_idx) {
 #endif
 
 			/* Create floor */
-//			c_ptr->feat = FEAT_FLOOR;
-			cave_set_feat_live(wpos, ny, nx, twall_erosion(wpos, ny, nx));
+			cave_set_feat_live(wpos, ny, nx, twall_erosion(wpos, ny, nx, FEAT_FLOOR));
 
 			/* Forget the "field mark", if any */
 			everyone_forget_spot(wpos, ny, nx);
@@ -9158,7 +9170,7 @@ static void process_monster_golem(int Ind, int m_idx) {
 			/* Deal with doors in the way */
 			if (did_open_door || did_bash_door) {
 				/* Break down the door */
-				if (did_bash_door && (rand_int(100) < 50))
+				if (did_bash_door && magik(DOOR_BASH_BREAKAGE))
 					c_ptr->feat = FEAT_BROKEN;
 				/* Open the door */
 				else
@@ -9326,7 +9338,7 @@ void process_monsters(void) {
 
 	int		closest, dis_to_closest, lowhp;
 	bool		blos, new_los;
-	bool		interval = ((turn % cfg.fps) == 0); //assumes that cfg.fps is divisable by MONSTER_TURNS!
+	bool		interval = (((turn / MONSTER_TURNS) % (cfg.fps / MONSTER_TURNS)) == 0);
 
 	monster_type	*m_ptr;
 	monster_race	*r_ptr;
@@ -9406,24 +9418,33 @@ void process_monsters(void) {
 
 		/* Added for Valinor; also used by target dummy - C. Blue */
 		if (r_ptr->flags7 & RF7_NEVER_ACT) m_ptr->energy = 0;
+		/* And for death fate */
+		if (m_ptr->status == M_STATUS_FRIENDLY) m_ptr->energy = 0;
 
 		/* Target dummy "snowiness" hack, checked once per second */
 		if (interval && !m_ptr->wpos.wz) {
 			if (((m_ptr->r_idx == RI_TARGET_DUMMY1) || (m_ptr->r_idx == RI_TARGET_DUMMY2)) &&
-			    (m_ptr->extra < 60) && (turn % cfg.fps == 0) &&
-			    (wild_info[m_ptr->wpos.wy][m_ptr->wpos.wx].weather_type == 2)) {
+			    (m_ptr->extra < 60) && (wild_info[m_ptr->wpos.wy][m_ptr->wpos.wx].weather_type == 2)) {
 				m_ptr->extra++;
 				if ((m_ptr->r_idx == RI_TARGET_DUMMY1) && (m_ptr->extra == 30)) {
 					m_ptr->r_idx = RI_TARGET_DUMMY2;
 					everyone_lite_spot(&m_ptr->wpos, fy, fx);
 				}
 			}
-			if (((m_ptr->r_idx == RI_TARGET_DUMMYA1) || (m_ptr->r_idx == RI_TARGET_DUMMYA2)) &&
-			    (m_ptr->extra < 60) && (turn % cfg.fps == 0) &&
-			    (wild_info[m_ptr->wpos.wy][m_ptr->wpos.wx].weather_type == 2)) {
+			else if (((m_ptr->r_idx == RI_TARGET_DUMMYA1) || (m_ptr->r_idx == RI_TARGET_DUMMYA2)) &&
+			    (m_ptr->extra < 60) && (wild_info[m_ptr->wpos.wy][m_ptr->wpos.wx].weather_type == 2)) {
 				m_ptr->extra++;
 				if ((m_ptr->r_idx == RI_TARGET_DUMMYA1) && (m_ptr->extra == 30)) {
 					m_ptr->r_idx = RI_TARGET_DUMMYA2;
+					everyone_lite_spot(&m_ptr->wpos, fy, fx);
+				}
+			}
+			/* Un-snow when winter is over -_- */
+			else if ((m_ptr->r_idx == RI_TARGET_DUMMY2 || m_ptr->r_idx == RI_TARGET_DUMMYA2) && !cold_place(&m_ptr->wpos)) {
+				if (m_ptr->extra && !rand_int(8)) m_ptr->extra--;
+				if (!m_ptr->extra) {
+					if (m_ptr->r_idx == RI_TARGET_DUMMY2) m_ptr->r_idx = RI_TARGET_DUMMY1;
+					else m_ptr->r_idx = RI_TARGET_DUMMYA1;
 					everyone_lite_spot(&m_ptr->wpos, fy, fx);
 				}
 			}
@@ -9432,6 +9453,24 @@ void process_monsters(void) {
 		/* Not enough energy to move */
 		if (m_ptr->energy < tmp) continue;
 
+
+		/* Break charm spell when out of range - C. Blue */
+		if (m_ptr->charmedignore) {
+			int Ind;
+
+			Ind = find_player(m_ptr->charmedignore);
+			if (Ind) {
+				player_type *p_ptr = Players[Ind];
+
+				/* Not dependant on r_ptr->aaf as this is about the player's mental reach, not the monster's! */
+				if (distance(p_ptr->py, p_ptr->px, fy, fx) >= MAX_RANGE
+				    || p_ptr->conn == NOT_CONNECTED
+				    || !inarea(&p_ptr->wpos, &m_ptr->wpos)) {
+					p_ptr->mcharming--;
+					m_ptr->charmedignore = 0;
+				}
+			} else m_ptr->charmedignore = 0; /* Charmer is gone, break the spell */
+		}
 
 		/* Make sure we don't store up too much energy */
 		//if (m_ptr->energy > tmp) m_ptr->energy = tmp;
@@ -9660,15 +9699,7 @@ void process_monsters(void) {
 #endif
 
 			/* Skip if under mindcrafter charm spell - C. Blue */
-			if (m_ptr->charmedignore) {
-				/* out of range? */
-				if (j > 20 || j > r_ptr->aaf) {
-					_Players[m_ptr->charmedignore]->mcharming--;
-					m_ptr->charmedignore = 0;
-				/* monster gets a sort of saving throw */
-				} else if (test_charmedignore(pl, m_ptr->charmedignore, r_ptr))
-					continue;
-			}
+			if (m_ptr->charmedignore && test_charmedignore(pl, m_ptr->charmedignore, m_ptr, r_ptr)) continue;
 
 			if (reveal_cloaking) {
 				monster_desc(pl, m_name, i, 0);

@@ -1053,7 +1053,7 @@ F:ONLY_ITEM | DROP_90 | DROP_GOOD | DROP_GREAT |
 # DROP_1D2 | <- not needed for smeagol? might need fixing.
 F:TAKE_ITEM | OPEN_DOOR | BASH_DOOR | INVISIBLE
 F:EVIL | BASEANGBAND
-D:Usually known as Gollum. He's been sneaking, and he wants his 'precious.'
+D:Usually known as Gollum. He's been sneaking, and he wants his 'precious'.
 
 N:64:Green ooze
 G:j:g
@@ -1288,7 +1288,7 @@ S:DRAIN_MANA
 D:A disembodied eye, crackling with energy.
 
 N:81:Yellow light
-G:*:y
+G:*:L
 I:120:2d6:8:12:30
 W:4:1:0:4
 E:0:0:0:0:0:0
@@ -1583,7 +1583,7 @@ F:DROP_90 |
 F:OPEN_DOOR | BASH_DOOR | DROP_SKELETON | DROP_CORPSE |
 F:EVIL | RES_POIS | WILD_EASY |
 F:MORTAL | BASEANGBAND | HAS_LITE
-D:It a man-sized figure with the all too recognizable face of a kobold.
+D:It is a man-sized figure with the all too recognizable face of a kobold.
 
 N:103:Grey icky thing
 G:i:s
@@ -4534,7 +4534,7 @@ D:He is green-skinned and ugly.
 
 
 N:298:Freezing sphere
-G:*:w
+G:*:c
 I:120:6d6:100:30:0
 W:17:1:0:50
 E:0:0:0:0:0:0
@@ -4546,7 +4546,7 @@ F:IM_COLD | NO_FEAR | NO_CONF | NO_SLEEP | NONLIVING | BASEANGBAND | HAS_LITE
 D:A semi-sentient snowball, hurling itself at targets at random.
 
 N:299:Jumping fireball
-G:*:r
+G:*:f
 I:120:6d6:100:30:0
 W:17:1:0:50
 E:0:0:0:0:0:0
@@ -4559,7 +4559,7 @@ F:IM_FIRE | NO_FEAR | NO_CONF | NO_SLEEP | NONLIVING | BASEANGBAND | HAS_LITE
 D:A semi-sentient fireball that moves around randomly.
 
 N:300:Ball lightning
-G:*:B
+G:*:e
 I:120:6d6:100:30:0
 W:17:1:0:50
 E:0:0:0:0:0:0
@@ -4762,7 +4762,7 @@ D:fade in front of your very eyes.
 
 N:313:Uruk
 G:o:B
-I:110:8d10:20:50:20
+I:110:18d10:20:50:20
 W:16:1:2300:60
 E:1:1:2:2:1:2
 O:20:80:0:0
@@ -15402,7 +15402,7 @@ D:They will help you in some quests.
 
 N:866:Elite uruk
 G:o:w
-I:110:10d10:20:50:0
+I:110:20d10:20:50:0
 W:20:1:2000:70
 E:1:1:2:2:1:2
 O:10:90:0:0
@@ -17947,7 +17947,7 @@ D:It is totally silent as it oozes towards you.
 
 N:1013:Bone golem
 G:g:w
-I:120:35d100:20:170:50
+I:120:35d100:20:140:50
 W:61:3:5000:23000
 E:1:1:2:2:1:2
 O:0:0:0:0
@@ -19095,7 +19095,7 @@ D:let alone fighting it!
 N:1074:Michael, the Guardian Overlord
 G:A:U
 I:140:400d70:250:200:255
-W:98:8:3200:58000
+W:98:8:3700:58000
 E:1:1:2:2:1:2
 O:0:70:30:0
 B:GAZE:TERRIFY:10d4
@@ -20470,6 +20470,54 @@ F:IM_FIRE | RES_COLD | IM_POIS | IM_ACID | RES_ELEC
 D:A giant humanoid demon wielding a massive, heavy and sharp scythe. Feared
 D:by foes and friends alike when it flies into one of its berserk rages, the
 D:Horned Reaper will cut down anything in its path between it and you.
+
+N:1155:Saenathra, Daughter of Shelob
+#FINAL_GUARDIAN
+G:S:u
+I:120:20d100:50:70:40
+W:34:2:1000:5000
+E:0:1:0:2:1:8
+O:100:0:0:0
+B:CLAW:POISON:2d6
+B:CLAW:POISON:2d6
+B:BITE:PARALYZE:2d8
+B:STING:LOSE_STR:2d4
+F:UNIQUE | FEMALE |
+F:FORCE_SLEEP | FORCE_MAXHP | SPECIAL_GENE
+F:ESCORT | ESCORTS | DROP_CORPSE | RES_DARK
+F:ONLY_ITEM | DROP_2D2 | DROP_GOOD | DROP_GREAT
+F:SMART | BASH_DOOR | IM_POIS | RES_ACID |
+F:ANIMAL | SPIDER | EVIL | HURT_LITE | NO_CONF | NO_SLEEP | BLUEBAND
+S:1_IN_4 |
+S:BLINK | HOLD | HEAL | SLOW
+S:S_SPIDERS
+D:Daughter of Shelob, the legendary Spider-Queen, Saenathra has built her own
+D:empire deep within the shadows of Mirkwood. With legions of ghastly giant
+D:spiders at her command, she has accumulated an untold fortune of treasure.
+
+N:1156:Annoying Test Blob
+G:j:o
+I:130:1d1:200:0:0
+W:127:0:0:0
+E:0:0:0:0:0:0
+O:0:0:0:0
+B:TOUCH:*
+F:ALLOW_RUNNING | BLUEBAND | NO_DEATH | ASTAR | OPEN_DOOR
+F:CAN_FLY
+F:AI_ANNOY
+D:For testing
+
+N:1157:Annoying Immune Test Blob
+G:j:U
+I:130:1d1:200:0:0
+W:127:0:0:0
+E:0:0:0:0:0:0
+O:0:0:0:0
+B:TOUCH:*
+F:ALLOW_RUNNING | BLUEBAND | NO_DEATH | ASTAR | OPEN_DOOR | IM_FIRE | IM_COLD | IM_ELEC
+F:CAN_FLY
+F:AI_ANNOY
+D:For testing
 
 
 # N: serial number : monster name

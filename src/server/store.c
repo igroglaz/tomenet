@@ -41,6 +41,9 @@
    same wands of different charge amounts to the same store. This may be less confusing though! */
 #define STORE_ROUNDS_SINGLE_WAND_CHARGES
 
+/* Dedicated IDDC-mode characters get all items from town stores in Bree for at least 50% discount. */
+#define IDDC_DED_DISCOUNT
+
 /* Sort spell scrolls alphabetically by spell name? [no] */
 #ifdef TEST_SERVER
  #define STORE_SORT_SPELLS_BY_NAME
@@ -274,11 +277,10 @@ s64b price_item(int Ind, object_type *o_ptr, int greed, bool flip) {
 	st_ptr = &town[i].townstore[p_ptr->store_num];
 	ot_ptr = &ow_info[st_ptr->owner];
 
-#if 1 /* IDDC-only mode characters -- EXPERIMENTAL */
+#ifdef IDDC_DED_DISCOUNT
 	if ((p_ptr->mode & MODE_DED_IDDC) && in_bree(&p_ptr->wpos) && !p_ptr->iron_winner_ded) {
 		int dis = o_ptr->discount;
 
-		/* IDDC-mode characters get at least a 50% discount on all town store items in Bree */
 		if (o_ptr->discount < 50) o_ptr->discount = 50;
 		price = object_value(flip ? Ind : 0, o_ptr);
 		o_ptr->discount = dis;
@@ -378,6 +380,8 @@ s64b price_item(int Ind, object_type *o_ptr, int greed, bool flip) {
 		/* You're not a welcomed customer.. */
 		if (p_ptr->tim_blacklist) price = price * 4;
 
+		/* Added for Hidden Library in IDDC */
+		if (st_info[st_ptr->st_idx].flags1 & SF1_SELL67) price = (price * 2) / 3;
 	}
 
 	/* Compute the final price (with rounding) */
@@ -485,68 +489,68 @@ static void mass_produce(object_type *o_ptr, store_type *st_ptr) {
 
 	/* Analyze the type */
 	switch (o_ptr->tval) {
-		/* Food, Flasks, and Lites */
-		case TV_FOOD:
-		case TV_FLASK:
-		case TV_LITE:
-		case TV_PARCHMENT:
-			if (cost <= 5L) size += mass_roll(3, 5);
-			if (cost <= 20L) size += mass_roll(3, 5);
-			break;
+	/* Food, Flasks, and Lites */
+	case TV_FOOD:
+	case TV_FLASK:
+	case TV_LITE:
+	case TV_PARCHMENT:
+		if (cost <= 5L) size += mass_roll(3, 5);
+		if (cost <= 20L) size += mass_roll(3, 5);
+		break;
 
-		case TV_POTION:
-		case TV_SCROLL:
-			if (cost <= 60L) size += mass_roll(3, 5);
-			if (cost <= 240L) size += mass_roll(1, 5);
-			if (st_ptr->st_idx == STORE_BTSUPPLY &&
-			    (o_ptr->sval == SV_POTION_STAR_HEALING ||
-			    o_ptr->sval == SV_POTION_RESTORE_MANA /* for mages - mikaelh */
-			    ))
-				size += mass_roll(3, 5);
-			break;
+	case TV_POTION:
+	case TV_SCROLL:
+		if (cost <= 60L) size += mass_roll(3, 5);
+		if (cost <= 240L) size += mass_roll(1, 5);
+		if (st_ptr->st_idx == STORE_BTSUPPLY &&
+		    (o_ptr->sval == SV_POTION_STAR_HEALING ||
+		    o_ptr->sval == SV_POTION_RESTORE_MANA /* for mages - mikaelh */
+		    ))
+			size += mass_roll(3, 5);
+		break;
 
-		case TV_BOOK:
-			if (cost <= 50L) size += mass_roll(2, 3);
-			if (cost <= 500L) size += mass_roll(1, 3);
-			break;
+	case TV_BOOK:
+		if (cost <= 50L) size += mass_roll(2, 3);
+		if (cost <= 500L) size += mass_roll(1, 3);
+		break;
 
-		case TV_SOFT_ARMOR:
-		case TV_HARD_ARMOR:
-		case TV_SHIELD:
-		case TV_GLOVES:
-		case TV_BOOTS:
-		case TV_CLOAK:
-		case TV_HELM:
-		case TV_CROWN:
-		case TV_SWORD:
-		case TV_POLEARM:
-		case TV_BLUNT:
-		case TV_DIGGING:
-		case TV_BOW:
-		case TV_BOOMERANG:
-		case TV_MSTAFF:
-		case TV_AXE:
-		case TV_TRAPKIT:
-		case TV_INSTRUMENT:
-		case TV_ROD: case TV_ROD_MAIN: case TV_STAFF: case TV_WAND:
-			/* No ego-stacks */
-			if (o_ptr->name2) break;
+	case TV_SOFT_ARMOR:
+	case TV_HARD_ARMOR:
+	case TV_SHIELD:
+	case TV_GLOVES:
+	case TV_BOOTS:
+	case TV_CLOAK:
+	case TV_HELM:
+	case TV_CROWN:
+	case TV_SWORD:
+	case TV_POLEARM:
+	case TV_BLUNT:
+	case TV_DIGGING:
+	case TV_BOW:
+	case TV_BOOMERANG:
+	case TV_MSTAFF:
+	case TV_AXE:
+	case TV_TRAPKIT:
+	case TV_INSTRUMENT:
+	case TV_ROD: case TV_ROD_MAIN: case TV_STAFF: case TV_WAND:
+		/* No ego-stacks */
+		if (o_ptr->name2) break;
 
-			if (cost <= 10L) size += mass_roll(3, 5);
-			if (cost <= 100L) size += mass_roll(3, 5);
-			break;
-		case TV_DRAG_ARMOR:
-			/* Only single items of these */
-			break;
+		if (cost <= 10L) size += mass_roll(3, 5);
+		if (cost <= 100L) size += mass_roll(3, 5);
+		break;
+	case TV_DRAG_ARMOR:
+		/* Only single items of these */
+		break;
 
-		case TV_SPIKE:
-		case TV_SHOT:
-		case TV_ARROW:
-		case TV_BOLT:
-			if (cost <= 10L) size += damroll(10, 2);
-			if (cost <= 100L) size += damroll(5, 3);
-			size += damroll(20, 2);
-			break;
+	case TV_SPIKE:
+	case TV_SHOT:
+	case TV_ARROW:
+	case TV_BOLT:
+		if (cost <= 10L) size += damroll(10, 2);
+		if (cost <= 100L) size += damroll(5, 3);
+		size += damroll(20, 2);
+		break;
 	}
 
 
@@ -802,6 +806,9 @@ static bool store_will_buy(int Ind, object_type *o_ptr) {
 		case TV_BOOMERANG:
 		/* mayyyyybe... */
 		case TV_FIRESTONE:
+		/* ok finally */
+		case TV_BOTTLE:
+		case TV_CHEST:
 			break;
 		default:
 			return (FALSE);
@@ -885,6 +892,8 @@ static bool store_will_buy(int Ind, object_type *o_ptr) {
 		case TV_POTION2:
 		/* mayyyyybe... */
 		case TV_FIRESTONE:
+		/* ok finally */
+		case TV_BOTTLE:
 			break;
 		default:
 			return (FALSE);
@@ -1025,6 +1034,8 @@ static bool store_will_buy(int Ind, object_type *o_ptr) {
 		switch (o_ptr->tval) {
 		case TV_POTION:
 		case TV_POTION2:
+		/* ok finally */
+		case TV_BOTTLE:
 			break;
 		default:
 			return (FALSE);
@@ -2316,7 +2327,11 @@ static void display_entry(int Ind, int pos) {
 
 	char		o_name[ONAME_LEN], powers[MAX_CHARS];
 	byte		attr;
+#ifdef IDDC_DED_DISCOUNT
+	int		wgt = 0;
+#else
 	int		wgt;
+#endif
 	int		i;
 	//int maxwid = 75;
 	bool museum = FALSE;
@@ -2418,6 +2433,14 @@ static void display_entry(int Ind, int pos) {
 			o_ptr->pval = i / o_ptr->number;
 		}
 #endif
+#ifdef IDDC_DED_DISCOUNT
+		/* Also display correct discount, so as to not confuse anybody, abuse unused 'wgt' for this. */
+		if ((p_ptr->mode & MODE_DED_IDDC) && in_bree(&p_ptr->wpos) && !p_ptr->iron_winner_ded) {
+			wgt = o_ptr->discount;
+			/* IDDC-mode characters get at least a 50% discount on all town store items in Bree */
+			if (o_ptr->discount < 50) o_ptr->discount = 50;
+		}
+#endif
 #ifdef PLAYER_STORES
 		/* Don't display items as fake *ID*ed in player stores! */
 		if (p_ptr->store_num <= -2) {
@@ -2453,6 +2476,10 @@ static void display_entry(int Ind, int pos) {
 		//o_name[maxwid] = '\0';
 		o_name[ONAME_LEN - 1] = '\0';
 
+#ifdef IDDC_DED_DISCOUNT
+		/* Restore hacked discount */
+		if (wgt) o_ptr->discount = wgt;
+#endif
 #ifdef PLAYER_STORES
 		if (ps_sign) attr = TERM_VIOLET;
 		else
@@ -2722,6 +2749,8 @@ static void display_store(int Ind) {
  * Haggling routine					-RAK-
  *
  * Return TRUE if purchase is NOT successful
+ * quiet: No message outout "You agree.." but just set price straight to final result.
+ *        This function is always called with quiet=TRUE, so we're not really "haggling" anywhere.
  */
 static bool sell_haggle(int Ind, object_type *o_ptr, s64b *price, bool quiet) {
 	player_type *p_ptr = Players[Ind];

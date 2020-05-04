@@ -291,6 +291,17 @@ int inven_drop(int Ind, int item, int amt) {
 	 * stack's pval alone. -LM-
 	 */
 	if (is_magic_device(o_ptr->tval)) divide_charged_item(&tmp_obj, o_ptr, amt);
+	o_ptr = &tmp_obj;
+
+	/* Decrease the item, optimize. */
+	inven_item_increase(Ind, item, -amt); /* note that this calls the required boni-updating et al */
+	inven_item_describe(Ind, item);
+	inven_item_optimize(Ind, item);
+
+	break_cloaking(Ind, 5);
+	break_shadow_running(Ind);
+	stop_precision(Ind);
+	stop_shooting_till_kill(Ind);
 
 	/* What are we "doing" with the object */
 	if (amt < o_ptr->number)
@@ -440,43 +451,35 @@ int inven_drop(int Ind, int item, int amt) {
 	    (item == INVEN_ARM && o_ptr->tval != TV_SHIELD))) set_melee_brand(Ind, 0, p_ptr->melee_brand_t, 0);
 
 	/* Drop it (carefully) near the player */
-	o_idx = drop_near_severe(Ind, &tmp_obj, 0, &p_ptr->wpos, p_ptr->py, p_ptr->px);
+	o_idx = drop_near_severe(Ind, o_ptr, 0, &p_ptr->wpos, p_ptr->py, p_ptr->px);
 
+	if (o_idx > 0) {
+		o_ptr = &o_list[o_idx];
 #ifdef PLAYER_STORES
-	o_ptr = &o_list[o_idx];
-	if (o_idx >= 0 && o_ptr->note && strstr(quark_str(o_ptr->note), "@S") && !o_ptr->questor
-	    && inside_house(&p_ptr->wpos, o_ptr->ix, o_ptr->iy)) {
-		object_desc(0, o_name, o_ptr, TRUE, 3);
-		s_printf("PLAYER_STORE_OFFER: %s - %s (%d,%d,%d; %d,%d).\n",
-		    p_ptr->name, o_name, p_ptr->wpos.wx, p_ptr->wpos.wy, p_ptr->wpos.wz,
-		    o_ptr->ix, o_ptr->iy);
-		/* appraise the item! */
-		(void)price_item_player_store(Ind, o_ptr);
-		o_ptr->housed = inside_which_house(&p_ptr->wpos, o_ptr->ix, o_ptr->iy);
-	}
+		if (o_idx >= 0 && o_ptr->note && strstr(quark_str(o_ptr->note), "@S") && !o_ptr->questor
+		    && inside_house(&p_ptr->wpos, o_ptr->ix, o_ptr->iy)) {
+			object_desc(0, o_name, o_ptr, TRUE, 3);
+			s_printf("PLAYER_STORE_OFFER: %s - %s (%d,%d,%d; %d,%d).\n",
+			    p_ptr->name, o_name, p_ptr->wpos.wx, p_ptr->wpos.wy, p_ptr->wpos.wz,
+			    o_ptr->ix, o_ptr->iy);
+			/* appraise the item! */
+			(void)price_item_player_store(Ind, o_ptr);
+			o_ptr->housed = inside_which_house(&p_ptr->wpos, o_ptr->ix, o_ptr->iy);
+		}
 #endif
 
-	/* Reattach questors to quest */
-	if (o_ptr->questor) {
-		q_ptr = &q_info[o_ptr->quest - 1];
-		if (!q_ptr->defined || /* this quest no longer exists in q_info.txt? */
-		    !q_ptr->active || /* or it's not supposed to be enabled atm? */
-		    q_ptr->questors <= o_ptr->questor_idx) { /* ew */
-			s_printf("QUESTOR DEPRECATED (on drop) o_idx %d, q_idx %d.\n", o_idx, o_ptr->quest - 1);
-			o_ptr->questor = FALSE;
-			/* delete him too, maybe? */
-		} else q_ptr->questor[o_ptr->questor_idx].mo_idx = o_idx;
+		/* Reattach questors to quest */
+		if (o_ptr->questor) {
+			q_ptr = &q_info[o_ptr->quest - 1];
+			if (!q_ptr->defined || /* this quest no longer exists in q_info.txt? */
+			    !q_ptr->active || /* or it's not supposed to be enabled atm? */
+			    q_ptr->questors <= o_ptr->questor_idx) { /* ew */
+				s_printf("QUESTOR DEPRECATED (on drop) o_idx %d, q_idx %d.\n", o_idx, o_ptr->quest - 1);
+				o_ptr->questor = FALSE;
+				/* delete him too, maybe? */
+			} else q_ptr->questor[o_ptr->questor_idx].mo_idx = o_idx;
+		}
 	}
-
-	/* Decrease the item, optimize. */
-	inven_item_increase(Ind, item, -amt); /* note that this calls the required boni-updating et al */
-	inven_item_describe(Ind, item);
-	inven_item_optimize(Ind, item);
-
-	break_cloaking(Ind, 5);
-	break_shadow_running(Ind);
-	stop_precision(Ind);
-	stop_shooting_till_kill(Ind);
 
 	return o_idx;
 }
@@ -1159,6 +1162,22 @@ void do_cmd_wield(int Ind, int item, u16b alt_slots) {
 		}
 	}
 
+#if 0 /* added but disabled for the time being because 1) inconsistent, 2) SHIFT+w doesn't work as suggested because it tries by default to replace main hand in this situation, 3) newbies must learn. */
+	/* newbie protection (warriors trying to swap their starter weapon and instead end up dual-wielding with chain mail..) */
+	if (item_fits_dual && equip_fits_dual && slot == INVEN_ARM && !p_ptr->inventory[INVEN_ARM].k_idx
+	    && !cursed_p(&(p_ptr->inventory[INVEN_WIELD]))) { /* this condition makes this hack a bit inconsistent, oh well */
+		/* quick hack for rha check */
+		p_ptr->inventory[INVEN_ARM].k_idx = 1;
+		p_ptr->inventory[INVEN_ARM].tval = TV_SWORD;
+		/* rha check.. */
+		if (rogue_heavy_armor(p_ptr)) {
+			msg_print(Ind, "\377yYour armour weight is too hig to dual-wield, so your main hand weapon has been replaced by this one. If you still intend to dual-wield, use SHIFT+w instead.");
+			slot = INVEN_WIELD;
+		}
+		/* unhack */
+		p_ptr->inventory[INVEN_ARM].k_idx = p_ptr->inventory[INVEN_ARM].tval = 0;
+	}
+#endif
 
 	x_ptr = &(p_ptr->inventory[slot]);
 
@@ -2120,7 +2139,7 @@ void power_inscribe(object_type *o_ptr, bool redux, char *powins) {
 	if (!redux) {
 		int amt = o_ptr->bpval + o_ptr->pval;
 
-		tmpf1 = f1 & (TR1_STR | TR1_INT | TR1_WIS | TR1_DEX | TR1_CON | TR1_CHR);
+		tmpf1 = f1 & TR1_ATTR_MASK;
 		tmpf2 = f2 & (TR2_SUST_STR | TR2_SUST_INT | TR2_SUST_WIS | TR2_SUST_DEX | TR2_SUST_CON | TR2_SUST_CHR);
 		tmpf3 = tmpf1 & tmpf2;
 		if (!amt) tmpf1 = tmpf3 = 0x0; //item was disenchanted to zero? don't display stat effects then.
@@ -3141,7 +3160,7 @@ void do_cmd_steal(int Ind, int dir) {
 			o_ptr = &q_ptr->inventory[item];
 			forge = *o_ptr;
 
-			if (TOOL_EQUIPPED(q_ptr) == SV_TOOL_THEFT_PREVENTION && magik (80)) {
+			if (TOOL_EQUIPPED(q_ptr) == SV_TOOL_THEFT_PREVENTION && magik(100)) { //80
 				/* Saving throw message */
 				msg_print(Ind, "Your attempt to steal was interfered with by a strange device!");
 				notice += 50;
@@ -3202,7 +3221,7 @@ void do_cmd_steal(int Ind, int dir) {
 				if (true_artifact_p(o_ptr)) a_info[o_ptr->name1].carrier = p_ptr->id;
 
 				/* Some events don't allow transactions before they begin */
-				if (!p_ptr->max_exp) {
+				if (!p_ptr->max_exp && !in_irondeepdive(&p_ptr->wpos)) {
 					msg_print(Ind, "You gain a tiny bit of experience from trading an item.");
 					gain_exp(Ind, 1);
 				}
@@ -3342,7 +3361,7 @@ static bool item_tester_refill_lantern(object_type *o_ptr)
 	if (o_ptr->name1) return (FALSE);
 
 	/* Flasks of oil are okay */
-	if (o_ptr->tval == TV_FLASK) return (TRUE);
+	if (o_ptr->tval == TV_FLASK && o_ptr->sval == SV_FLASK_OIL) return (TRUE);
 
 	/* Other lanterns are okay */
 	if ((o_ptr->tval == TV_LITE) &&
@@ -3395,7 +3414,7 @@ static void do_cmd_refill_lamp(int Ind, int item)
 		return;
 	}
 
-	if (o_ptr->tval != TV_FLASK && o_ptr->timeout == 0) {
+	if (!(o_ptr->tval == TV_FLASK && o_ptr->sval == SV_FLASK_OIL) && o_ptr->timeout == 0) {
 		msg_print(Ind, "That item has no fuel left!");
 		return;
 	}
@@ -3411,7 +3430,7 @@ static void do_cmd_refill_lamp(int Ind, int item)
 
 	/* Refuel */
 	used_fuel = j_ptr->timeout;
-	if (o_ptr->tval == TV_FLASK) {
+	if (o_ptr->tval == TV_FLASK && o_ptr->sval == SV_FLASK_OIL) {
 		j_ptr->timeout += o_ptr->pval;
 	} else {
 		spilled_fuel = (o_ptr->timeout * (randint(5) + (130 - adj_dex_th_mul[p_ptr->stat_ind[A_DEX]]) / 2)) / 100; /* spill some */
@@ -3429,7 +3448,7 @@ static void do_cmd_refill_lamp(int Ind, int item)
 	}
 	used_fuel = j_ptr->timeout - used_fuel;
 
-	if (o_ptr->tval == TV_FLASK || item <= 0) { /* just dispose of for now, if it was from the ground */
+	if ((o_ptr->tval == TV_FLASK && o_ptr->sval == SV_FLASK_OIL) || item <= 0) { /* just dispose of for now, if it was from the ground */
 		/* Decrease the item (from the pack) */
 		if (item >= 0) {
 			inven_item_increase(Ind, item, -1);
@@ -4009,7 +4028,7 @@ void do_cmd_look(int Ind, int dir) {
 			snprintf(out_val, sizeof(out_val), "%s the %s %s", q_ptr->name, race_info[q_ptr->prace].title, get_ptitle(q_ptr, FALSE));
 			//, class_info[q_ptr->pclass].title
 #else /* use special_prace_lookup */
-			snprintf(out_val, sizeof(out_val), "%s the %s %s", q_ptr->name, get_prace(q_ptr), get_ptitle(q_ptr, FALSE));
+			snprintf(out_val, sizeof(out_val), "%s the %s%s", q_ptr->name, get_prace2(q_ptr), get_ptitle(q_ptr, FALSE));
 #endif
 		}
 	} else if (c_ptr->m_idx > 0 && p_ptr->mon_vis[c_ptr->m_idx]) {	/* TODO: handle monster mimics */
@@ -4307,7 +4326,7 @@ void do_cmd_locate(int Ind, int dir) {
 		if (p_ptr->screen_wid == SCREEN_WID && p_ptr->screen_hgt == SCREEN_HGT)
 			trad_val[0] = 0;
 		else
-			sprintf(trad_val, ", traditionally [%d,%d]", p_ptr->tradpanel_row, p_ptr->tradpanel_col);
+			sprintf(trad_val, ", traditionally [%d,%d]", p_ptr->tradpanel_col, p_ptr->tradpanel_row);
 	} else {
 		sprintf(tmp_val, "%s%s of",
 		        ((y2 < y1) ? " North" : (y2 > y1) ? " South" : ""),
@@ -4318,7 +4337,7 @@ void do_cmd_locate(int Ind, int dir) {
 	/* Prepare to ask which way to look */
 	sprintf(out_val,
 	    "Map sector [%d,%d], which is%s your sector%s. Direction (or ESC)?",
-	    y2, x2, tmp_val, trad_val);
+	    x2, y2, tmp_val, trad_val);
 
 	msg_print(Ind, out_val);
 

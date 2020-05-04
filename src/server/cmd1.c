@@ -60,7 +60,7 @@ bool nothing_test(object_type *o_ptr, player_type *p_ptr, worldpos *wpos, int x,
 	int idx = zcave ? zcave[y][x].o_idx : -1;
 
 	if ((o_ptr->wpos.wx != wpos->wx) || (o_ptr->wpos.wy != wpos->wy) || (o_ptr->wpos.wz != wpos->wz) ||
-	    (o_ptr->ix && (o_ptr->ix != x)) || (o_ptr->iy && (o_ptr->iy != y))) {
+	    (!o_ptr->held_m_idx && ((o_ptr->ix && (o_ptr->ix != x)) || (o_ptr->iy && (o_ptr->iy != y))))) {
 		/* Item is not at the same (or similar) location as the player? Then he can't pick it up.. */
 		object_desc(0, o_name, o_ptr, TRUE, 3);
 		if (p_ptr != NULL) {
@@ -113,7 +113,7 @@ bool nothing_test2(cave_type *c_ptr, int x, int y, struct worldpos *wpos, int ma
 
 	o_ptr = &o_list[c_ptr->o_idx];
 	if (inarea(&o_ptr->wpos, wpos) &&
-	    o_ptr->ix == x && o_ptr->iy == y) return TRUE;
+	    (o_ptr->held_m_idx || (o_ptr->ix == x && o_ptr->iy == y))) return TRUE;
 
 	s_printf("NOTHING_TEST2: o_idx %d, iwpos %d,%d,%d, ix,iy %d,%d. wpos %d,%d,%d x,y %d,%d (%d)\n",
 	    c_ptr->o_idx, o_ptr->wpos.wx, o_ptr->wpos.wy, o_ptr->wpos.wz, o_ptr->ix, o_ptr->iy,
@@ -570,7 +570,7 @@ s16b tot_dam_aux(int Ind, object_type *o_ptr, int tdam, monster_type *m_ptr, boo
 
 	/* Slay Dragon  */
 	if ((f1 & TR1_SLAY_DRAGON) &&
-	    (r_ptr->flags3 & RF3_DRAGON)) {
+	    (r_ptr->flags3 & (RF3_DRAGON | RF3_DRAGONRIDER))) {
 		/*if (m_ptr->ml) r_ptr->r_flags3 |= RF3_DRAGON;*/
 		if (mult < FACTOR_SLAY) mult = FACTOR_SLAY;
 		if (bonus < FLAT_SLAY_BONUS) bonus = FLAT_SLAY_BONUS;
@@ -578,7 +578,7 @@ s16b tot_dam_aux(int Ind, object_type *o_ptr, int tdam, monster_type *m_ptr, boo
 
 	/* Execute Dragon */
 	if ((f1 & TR1_KILL_DRAGON) &&
-	    (r_ptr->flags3 & RF3_DRAGON)) {
+	    (r_ptr->flags3 & (RF3_DRAGON | RF3_DRAGONRIDER))) {
 		/*if (m_ptr->ml) r_ptr->r_flags3 |= RF3_DRAGON;*/
 		if (mult < FACTOR_KILL) mult = FACTOR_KILL;
 		if (bonus < FLAT_KILL_BONUS) bonus = FLAT_KILL_BONUS;
@@ -963,7 +963,8 @@ s16b tot_dam_aux_player(int Ind, object_type *o_ptr, int tdam, player_type *q_pt
 		if (magik(50)) f1 &= ~TR1_BRAND_FIRE;
 		else f1 &= ~TR1_BRAND_COLD;
 	}
-
+	if ((f1 & TR1_BRAND_COLD) && (fx & TBRAND_HELLFIRE))
+		f1 &= ~TR1_BRAND_COLD; //hellfire gets priority
 
 	/* emulate slay-susceptibilities */
 	if (q_ptr->body_monster) q_flags3 |= r_info[q_ptr->body_monster].flags3;
@@ -1405,7 +1406,7 @@ void carry(int Ind, int pickup, int confirm, bool pick_one) {
 	o_ptr = &o_list[c_ptr->o_idx];
 	num_org = o_ptr->number;
 
-	if (nothing_test(o_ptr, p_ptr, &p_ptr->wpos, p_ptr->px, p_ptr->py, 1)) return;
+	if (nothing_test(o_ptr, p_ptr, &p_ptr->wpos, p_ptr->px, p_ptr->py, 9)) return; //was 1
 
 	/* Cannot pick up stuff in leaderless guild halls */
 	if ((zcave[p_ptr->py][p_ptr->px].info & CAVE_GUILD_SUS) &&
@@ -1587,7 +1588,7 @@ void carry(int Ind, int pickup, int confirm, bool pick_one) {
 						amount);
  #endif
 				/* Some events don't allow transactions before they begin */
-				if (!p_ptr->max_exp) {
+				if (!p_ptr->max_exp && !in_irondeepdive(wpos)) {
 					msg_print(Ind, "You gain a tiny bit of experience from exchanging money.");
 					gain_exp(Ind, 1);
 				}
@@ -1692,26 +1693,30 @@ void carry(int Ind, int pickup, int confirm, bool pick_one) {
 #endif
 #ifdef IDDC_RESTRICTED_TRADING
 		if (in_irondeepdive(&p_ptr->wpos) && o_ptr->owner && o_ptr->owner != p_ptr->id) {
+ #if 1
+			if (exceptionally_shareable_item(o_ptr)) o_ptr->discount = 100;
+			else
+ #endif
 			if (p_ptr->IDDC_logscum) {
 				msg_print(Ind, "\377yYou cannot take items on stale floors.");
 				if (!is_admin(p_ptr)) return;
 			}
-			if (!o_ptr->iron_trade || !o_ptr->iron_turn) { /* includes the extra items every character who enters the IDDC gains as a starter bonus */
+			else if (!o_ptr->iron_trade || !o_ptr->iron_turn) { /* includes the extra items every character who enters the IDDC gains as a starter bonus */
 				msg_print(Ind, "\377yYou cannot trade items that haven't been found in the IDDC.");
 				if (!is_admin(p_ptr)) return;
 			}
-			if (!p_ptr->party) {
+			else if (!p_ptr->party) {
 				msg_print(Ind, "\377yYou cannot take items from anyone not in your party.");
 				if (!is_admin(p_ptr)) return;
 			}
-			if (p_ptr->iron_trade != o_ptr->iron_trade) {
+			else if (p_ptr->iron_trade != o_ptr->iron_trade) {
 				if (lookup_player_party(o_ptr->owner) != p_ptr->party)
 					msg_print(Ind, "\377yYou cannot take items from outsiders.");
 				else
 					msg_print(Ind, "\377yYou cannot take items whose owner found them before joining the party.");
 				if (!is_admin(p_ptr)) return;
 			}
-			if (p_ptr->iron_turn > o_ptr->iron_turn) {
+			else if (p_ptr->iron_turn > o_ptr->iron_turn) {
 				msg_print(Ind, "\377yYou cannot take this item as it predates you joining the party.");
 				if (!is_admin(p_ptr)) return;
 			}
@@ -2238,12 +2243,12 @@ void carry(int Ind, int pickup, int confirm, bool pick_one) {
 					if (k_info[o_ptr->k_idx].flags5 & TR5_WINNERS_ONLY) s_printf("%s FOUND_WINNERS_ONLY: %s (%d) %s\n", showtime(), p_ptr->name, p_ptr->wpos.wz, o_name_real);
 
 					/* Some events don't allow transactions before they begin. Extend this to no_soloist-event-drops (Santa Claus). */
-					if (o_ptr->no_soloist && !p_ptr->max_exp) {
+					if (o_ptr->no_soloist && !p_ptr->max_exp && !in_irondeepdive(wpos)) {
 						msg_print(Ind, "Due to the item's origin you gain a tiny bit of experience from picking it up.");
 						gain_exp(Ind, 1);
 					}
 					/* Prevent IDDC cheeze */
-					else if (wpos->wz && !p_ptr->max_exp) {
+					else if (wpos->wz && !p_ptr->max_exp && !in_irondeepdive(wpos)) {
 						msg_print(Ind, "You gain a tiny bit of experience from picking up your first item in a dungeon.");
 						gain_exp(Ind, 1);
 					}
@@ -2301,7 +2306,7 @@ void carry(int Ind, int pickup, int confirm, bool pick_one) {
 					if (true_artifact_p(o_ptr)) a_info[o_ptr->name1].carrier = p_ptr->id;
 
 					/* Some events don't allow transactions before they begins */
-					if (!p_ptr->max_exp) {
+					if (!p_ptr->max_exp && !in_irondeepdive(wpos)) {
 						msg_print(Ind, "You gain a tiny bit of experience from trading an item.");
 						gain_exp(Ind, 1);
 					}
@@ -2359,38 +2364,7 @@ void carry(int Ind, int pickup, int confirm, bool pick_one) {
 				/* Describe the object */
 				object_desc(Ind, o_name, o_ptr, TRUE, 3);
 
-				/* felt an (non-changing!) object of same kind before via pseudo-id? then remember.
-				   Note: currently all objects for which that is true are 'magic', hence we only
-				   use object_value_auxX_MAGIC() below. Note that if we add an item to an already
-				   felt item in our inventory, the combined items will have ID_SENSE set of course,
-				   so we won't get another "remember" message, just as it makes sense :) - C. Blue */
-				if (!object_aware_p(Ind, o_ptr) && !object_known_p(Ind, o_ptr)
-				    && !(o_ptr->ident & ID_SENSE) && object_felt_p(Ind, o_ptr)) {
-					/* We have "felt" this kind of object already before */
-				        o_ptr->ident |= (ID_SENSE);
-					/* Also, rings and amulets aren't covered by auxX_magic, so we have to exempt them (null string!): */
-					if (o_ptr->tval != TV_RING && o_ptr->tval != TV_AMULET) {
-						if (!object_felt_heavy_p(Ind, o_ptr)) {
-							/* at least give a notice */
-							msg_format(Ind, "You remember %s (%c) in your pack %s %s.",
-							    o_name, index_to_label(slot), ((o_ptr->number != 1) ? "were" : "was"), value_check_aux2_magic(o_ptr));
-							/* otherwise inscribe it textually */
-							if (!o_ptr->note) o_ptr->note = quark_add(value_check_aux2_magic(o_ptr));
-						} else {
-							/* at least give a notice */
-							msg_format(Ind, "You remember %s (%c) in your pack %s %s.",
-							    o_name, index_to_label(slot), ((o_ptr->number != 1) ? "were" : "was"), value_check_aux1_magic(o_ptr));
-							/* otherwise inscribe it textually */
-							if (!o_ptr->note) o_ptr->note = quark_add(value_check_aux1_magic(o_ptr));
-						}
-					}
-#if 0
-					/* Combine / Reorder the pack (later) */
-					p_ptr->notice |= (PN_COMBINE | PN_REORDER);
-					/* Window stuff */
-					p_ptr->window |= (PW_INVEN | PW_EQUIP);
-#endif
-				} else {
+				if (!remember_sense(Ind, slot, o_ptr)) {
 					/* Just standard message */
 					msg_format(Ind, "You have %s (%c).", o_name, index_to_label(slot));
 				}
@@ -3287,12 +3261,6 @@ static void py_attack_player(int Ind, int y, int x, byte old) {
 			/* Reduce damage in PvP */
 			k = (k + PVP_MELEE_DAM_REDUCTION - 1) / PVP_MELEE_DAM_REDUCTION;
 
-			/* Cannot kill on this grid? */
-			if (no_pk) {
-				if (k > q_ptr->chp) k -= q_ptr->chp;
-				if (k2 > q_ptr->chp) k2 -= q_ptr->chp;
-			}
-
 			/* Messages */
 			if (backstab) {
 				backstab_feed = TRUE;
@@ -3321,14 +3289,27 @@ static void py_attack_player(int Ind, int y, int x, byte old) {
 				msg_format(0 - c_ptr->m_idx, "%s hits you for \377R%d \377wdamage.", p_ptr->name, k);
 			}
 
-			if (cfg.use_pk_rules == PK_RULES_NEVER && q_ptr->chp < 5){
+			/* Cannot kill on this grid? */
+			if (no_pk) {
+				if (k > q_ptr->chp) k = q_ptr->chp;
+				if (k2 > q_ptr->chp) k2 = q_ptr->chp;
+			}
+
+			/* no_pk handled */
+			if (cfg.use_pk_rules == PK_RULES_NEVER && q_ptr->chp - k <= 0) {
 				msg_format(Ind, "\374You have beaten %s", q_ptr->name);
 				msg_format(0 - c_ptr->m_idx, "\374%s has beaten you up!", p_ptr->name);
 				teleport_player(0 - c_ptr->m_idx, 400, TRUE);
+
+				/* End of the fight */
+				break;
 			}
 
 			p_ptr->vamp_fed_midx = -c_ptr->m_idx;
+			p_ptr->tmp_x = 0; //blood bond marker
 			take_hit(0 - c_ptr->m_idx, k, p_ptr->name, Ind);
+			/* Blood bond won? End of the fight */
+			if (p_ptr->tmp_x) break;
 
 			/* Check for death */
 			if (q_ptr->death) {
@@ -3340,10 +3321,7 @@ static void py_attack_player(int Ind, int y, int x, byte old) {
 					feed = (6 - (300 / feed)) * 100;//300..600
 					if (backstab_feed) feed *= 2;
 					if (q_ptr->prace == RACE_VAMPIRE) feed /= 3;
-					/* Never get gorged */
-					feed += p_ptr->food;
-					if (feed >= PY_FOOD_MAX) feed = PY_FOOD_MAX - 1;
-					set_food(Ind, feed);
+					set_food(Ind, feed + p_ptr->food);
 				}
 
 #ifdef USE_SOUND_2010
@@ -3367,13 +3345,18 @@ static void py_attack_player(int Ind, int y, int x, byte old) {
 //				sound(Ind, SOUND_HIT);
 #endif
 
-				/* end of our fight */
+				/* End of the fight */
 				break;
 			}
 
+			/* Redundant check actually, we already caught all 'End of the fight' cases above. */
 			if (!c_ptr->m_idx) break;
 
+			/* -- Target didn't die, so the fight is still going on -- */
+
+			/* Apply aura damage to attacker */
 			py_touch_zap_player(Ind, -c_ptr->m_idx);
+			/* todo maybe: handle player death from getting zapped? */
 
 			/* VAMPIRIC: Are we draining it?  A little note: If the monster is
 			   dead, the drain does not work... */
@@ -3749,6 +3732,8 @@ static void py_attack_mon(int Ind, int y, int x, byte old) {
 	m_ptr = &m_list[c_ptr->m_idx];
 	r_ptr = race_inf(m_ptr);
 	helpless = (m_ptr->csleep || m_ptr->stunned > 100 || m_ptr->confused);
+
+	if (m_ptr->status == M_STATUS_FRIENDLY) return;
 
 	if ((r_ptr->flags3 & RF3_UNDEAD) ||
 	    //(r_ptr->flags3 & RF3_DEMON) ||
@@ -4537,10 +4522,7 @@ static void py_attack_mon(int Ind, int y, int x, byte old) {
 					if (r_ptr->flags3 & RF3_DEMON) feed /= 2;
 					if (r_ptr->d_char == 'A') feed /= 3;
 					if (backstab_feed) feed *= 2;
-					/* Never get gorged */
-					feed += p_ptr->food;
-					if (feed >= PY_FOOD_MAX) feed = PY_FOOD_MAX - 1;
-					set_food(Ind, feed);
+					set_food(Ind, feed + p_ptr->food);
 				}
 
 #ifdef USE_SOUND_2010
@@ -4564,6 +4546,7 @@ static void py_attack_mon(int Ind, int y, int x, byte old) {
 //				sound(Ind, SOUND_HIT);
 #endif
 
+				fear = FALSE; /* paranoia */
 				break; /* monster is dead */
 			}
 #ifdef ENABLE_OHERETICISM
@@ -4572,6 +4555,7 @@ static void py_attack_mon(int Ind, int y, int x, byte old) {
 #endif
 
 			touch_zap_player(Ind, c_ptr->m_idx);
+			/* todo maybe: handle player death from getting zapped? */
 
 			/* Apply effects from mimic monster forms */
 			if (p_ptr->body_monster) {
@@ -5106,30 +5090,59 @@ void py_touch_zap_player(int Ind, int Ind2) {
 	bool aura_ok = !magik((p_ptr->antimagic * 8) / 5);
 	int auras_failed = 0;
 
-	if (!p_ptr->death && q_ptr->sh_fire) {
-		if (!(p_ptr->immune_fire)) {
-			aura_damage = damroll(2, 6);
-			if (p_ptr->oppose_fire) aura_damage = (aura_damage + 2) / 3;
-			if (p_ptr->resist_fire) aura_damage = (aura_damage + 2) / 3;
-			if (p_ptr->suscep_fire) aura_damage = aura_damage * 2;
+	/* Alternate contradicting auras, same as with brands */
+	if (!p_ptr->death && q_ptr->sh_fire && q_ptr->sh_cold) {
+		if (rand_int(2)) {
+			if (!(p_ptr->immune_fire)) {
+				aura_damage = damroll(2, 6);
+				if (p_ptr->oppose_fire) aura_damage = (aura_damage + 2) / 3;
+				if (p_ptr->resist_fire) aura_damage = (aura_damage + 2) / 3;
+				if (p_ptr->suscep_fire) aura_damage = aura_damage * 2;
 
-			msg_format(Ind, "You are enveloped in flames for \377w%d\377w damage!", aura_damage);
-			msg_format(Ind2, "%s is enveloped in flames for \377w%d\377w damage!", p_ptr->name, aura_damage);
-			take_hit(Ind, aura_damage, "a fire aura", Ind2);
-			handle_stuff(Ind);
+				msg_format(Ind, "You are enveloped in flames for \377w%d\377w damage!", aura_damage);
+				msg_format(Ind2, "%s is enveloped in flames for \377w%d\377w damage!", p_ptr->name, aura_damage);
+				take_hit(Ind, aura_damage, "a fire aura", Ind2);
+				handle_stuff(Ind);
+			}
+		} else {
+			if (!(p_ptr->immune_cold)) {
+				aura_damage = damroll(2, 6);
+				if (p_ptr->oppose_cold) aura_damage = (aura_damage + 2) / 3;
+				if (p_ptr->resist_cold) aura_damage = (aura_damage + 2) / 3;
+				if (p_ptr->suscep_cold) aura_damage = aura_damage * 2;
+
+				msg_format(Ind, "You are freezing for \377w%d\377w damage!", aura_damage);
+				msg_format(Ind2, "%s is freezing for \377w%d\377w damage!", p_ptr->name, aura_damage);
+				take_hit(Ind, aura_damage, "a frost aura", Ind2);
+				handle_stuff(Ind);
+			}
 		}
-	}
-	if (!p_ptr->death && q_ptr->sh_cold) {
-		if (!(p_ptr->immune_cold)) {
-			aura_damage = damroll(2, 6);
-			if (p_ptr->oppose_cold) aura_damage = (aura_damage + 2) / 3;
-			if (p_ptr->resist_cold) aura_damage = (aura_damage + 2) / 3;
-			if (p_ptr->suscep_cold) aura_damage = aura_damage * 2;
+	} else {
+		if (!p_ptr->death && q_ptr->sh_fire) {
+			if (!(p_ptr->immune_fire)) {
+				aura_damage = damroll(2, 6);
+				if (p_ptr->oppose_fire) aura_damage = (aura_damage + 2) / 3;
+				if (p_ptr->resist_fire) aura_damage = (aura_damage + 2) / 3;
+				if (p_ptr->suscep_fire) aura_damage = aura_damage * 2;
 
-			msg_format(Ind, "You are freezing for \377w%d\377w damage!", aura_damage);
-			msg_format(Ind2, "%s is freezing for \377w%d\377w damage!", p_ptr->name, aura_damage);
-			take_hit(Ind, aura_damage, "a frost aura", Ind2);
-			handle_stuff(Ind);
+				msg_format(Ind, "You are enveloped in flames for \377w%d\377w damage!", aura_damage);
+				msg_format(Ind2, "%s is enveloped in flames for \377w%d\377w damage!", p_ptr->name, aura_damage);
+				take_hit(Ind, aura_damage, "a fire aura", Ind2);
+				handle_stuff(Ind);
+			}
+		}
+		if (!p_ptr->death && q_ptr->sh_cold) {
+			if (!(p_ptr->immune_cold)) {
+				aura_damage = damroll(2, 6);
+				if (p_ptr->oppose_cold) aura_damage = (aura_damage + 2) / 3;
+				if (p_ptr->resist_cold) aura_damage = (aura_damage + 2) / 3;
+				if (p_ptr->suscep_cold) aura_damage = aura_damage * 2;
+
+				msg_format(Ind, "You are freezing for \377w%d\377w damage!", aura_damage);
+				msg_format(Ind2, "%s is freezing for \377w%d\377w damage!", p_ptr->name, aura_damage);
+				take_hit(Ind, aura_damage, "a frost aura", Ind2);
+				handle_stuff(Ind);
+			}
 		}
 	}
 	if (!p_ptr->death && q_ptr->sh_elec) {
@@ -5353,11 +5366,7 @@ void do_nazgul(int Ind, int *k, monster_race *r_ptr, int slot) {
 	}
 
 	/* Chance of getting the Black Breath */
-	if (
-#ifdef VAMPIRES_BB_IMMUNE
-	    p_ptr->prace != RACE_VAMPIRE &&
-#endif
-	    !p_ptr->black_breath &&
+	if (!p_ptr->black_breath &&
 	    /* Hobbits and undead forms resist slightly, non-weapon attacks are especially susceptible */
 	    magik((p_ptr->prace == RACE_HOBBIT || p_ptr->suscep_life ? 5 : 10) + (o_ptr ? 0 : 10))) {
 		s_printf("EFFECT: BLACK-BREATH - %s was infected by a Nazgul\n", p_ptr->name);
@@ -5369,6 +5378,10 @@ void set_black_breath(int Ind) {
 	player_type *p_ptr = Players[Ind];
 
 	if (p_ptr->ghost) return;
+#ifdef VAMPIRES_BB_IMMUNE
+	if (p_ptr->prace == RACE_VAMPIRE) return;
+#endif
+	if (p_ptr->martyr) return;
 
 	msg_print(Ind, "\376\377DYour foe calls upon your soul!");
 	msg_print(Ind, "\376\377DYou feel the Black Breath slowly draining you of life...");
@@ -5408,8 +5421,8 @@ bool do_prob_travel(int Ind, int dir) {
 
 		/* Still in rock ? continue */
 		if ((!cave_empty_bold(zcave, y, x)) || (zcave[y][x].info & CAVE_ICKY)
-		    /* don't prob into sickbay area - drawback: also can't prob into inns */
-		     || (zcave[y][x].feat == FEAT_PROTECTED)) {
+		    /* don't prob into sickbay area - drawback: also can't prob into inns; also not into shops (and occupy them! harhar) */
+		     || zcave[y][x].feat == FEAT_PROTECTED || zcave[y][x].feat == FEAT_SHOP) {
 			y += ddy[dir];
 			x += ddx[dir];
 			continue;
@@ -5622,7 +5635,7 @@ static void moved_player(int Ind, player_type *p_ptr, cave_type **zcave, int ox,
 	struct c_special *cs_ptr;
 
 	/* un-snow */
-	p_ptr->temp_misc_2 &= ~0x01;
+	p_ptr->temp_misc_1 &= ~0x08;
 
 	grid_affects_player(Ind, ox, oy);
 
@@ -6334,6 +6347,10 @@ void move_player(int Ind, int dir, int do_pickup, char *consume_full_energy) {
 					msg_print(Ind, "You feel a door blocking your way.");
 					*w_ptr |= CAVE_MARK;
 					everyone_lite_spot(wpos, y, x);
+				} else if (c_ptr->feat == FEAT_WEB) {
+					*w_ptr |= CAVE_MARK;
+					everyone_lite_spot(wpos, y, x);
+					msg_print(Ind, "You feel something sticky blocking your way.");
 				/* Wall (or secret door) */
 				} else {
 					msg_print(Ind, "You feel a wall blocking your way.");
@@ -6402,6 +6419,8 @@ void move_player(int Ind, int dir, int do_pickup, char *consume_full_energy) {
 						msg_print(Ind, "There is an endless depth below the clouds, blocking your way.");
 					} else if (c_ptr->feat == FEAT_SICKBAY_DOOR) {
 						msg_print(Ind, "You are not allowed to enter the sickbay.");
+					} else if (c_ptr->feat == FEAT_WEB) {
+						msg_print(Ind, "There are thick spiderwebs blocking your way.");
 					/* Wall (or secret door) */
 					} else if (c_ptr->feat != FEAT_SIGN) {
 						msg_print(Ind, "There is a wall blocking your way.");
@@ -6540,18 +6559,12 @@ void black_breath_infection(int Ind, int Ind2) {
 
 	/* Prevent players who are AFK from getting infected in towns - mikaelh */
 	if (p_ptr->black_breath && !q_ptr->black_breath &&
-#ifdef VAMPIRES_BB_IMMUNE
-	    q_ptr->prace != RACE_VAMPIRE &&
-#endif
 	    magik(q_ptr->suscep_life ? 10 : 25) &&
 	    !(q_ptr->afk && istown(&q_ptr->wpos)) && q_ptr->lev > cfg.newbies_cannot_drop && q_ptr->lev >= BB_INFECT_MINLEV) {
 		s_printf("EFFECT: BLACK-BREATH - %s was infected by %s\n", q_ptr->name, p_ptr->name);
 		set_black_breath(Ind2);
 	}
 	if (q_ptr->black_breath && !p_ptr->black_breath &&
-#ifdef VAMPIRES_BB_IMMUNE
-	    p_ptr->prace != RACE_VAMPIRE &&
-#endif
 	    magik(p_ptr->suscep_life ? 10 : 25) &&
 	    !(p_ptr->afk && istown(&p_ptr->wpos)) && p_ptr->lev > cfg.newbies_cannot_drop && p_ptr->lev >= BB_INFECT_MINLEV) {
 		s_printf("EFFECT: BLACK-BREATH - %s was infected by %s\n", p_ptr->name, q_ptr->name);
@@ -7485,4 +7498,46 @@ int apply_parry_chance(player_type *p_ptr, int n) { /* n can already be modified
 	if (p_ptr->stun > 50) n = (n * 7) / 10;
 	if (!n) n = 1;
 	return (n);
+}
+
+/* Remember our previous pseudo-id feeling on flavoured items */
+bool remember_sense(int Ind, int slot, object_type *o_ptr) {
+	/* felt an (non-changing!) object of same kind before via pseudo-id? then remember.
+	   Note: currently all objects for which that is true are 'magic', hence we only
+	   use object_value_auxX_MAGIC() below. Note that if we add an item to an already
+	   felt item in our inventory, the combined items will have ID_SENSE set of course,
+	   so we won't get another "remember" message, just as it makes sense :) - C. Blue */
+	if (!object_aware_p(Ind, o_ptr) && !object_known_p(Ind, o_ptr)
+	    && !(o_ptr->ident & ID_SENSE) && object_felt_p(Ind, o_ptr)) {
+		/* Also, rings and amulets aren't covered by auxX_magic, so we have to exempt them (null string!): */
+		if (o_ptr->tval != TV_RING && o_ptr->tval != TV_AMULET) {
+			char o_name[ONAME_LEN];
+
+			object_desc(Ind, o_name, o_ptr, TRUE, 3);
+
+			if (!object_felt_heavy_p(Ind, o_ptr)) {
+				/* at least give a notice */
+				msg_format(Ind, "You remember %s (%c) in your pack %s %s.",
+				    o_name, index_to_label(slot), ((o_ptr->number != 1) ? "were" : "was"), value_check_aux2_magic(o_ptr));
+				/* otherwise inscribe it textually */
+				if (!o_ptr->note) {
+					o_ptr->note = quark_add(value_check_aux2_magic(o_ptr));
+					o_ptr->auto_insc = TRUE;
+				}
+			} else {
+				/* at least give a notice */
+				msg_format(Ind, "You remember %s (%c) in your pack %s %s.",
+				    o_name, index_to_label(slot), ((o_ptr->number != 1) ? "were" : "was"), value_check_aux1_magic(o_ptr));
+				/* otherwise inscribe it textually */
+				if (!o_ptr->note) {
+					o_ptr->note = quark_add(value_check_aux1_magic(o_ptr));
+					o_ptr->auto_insc = TRUE;
+				}
+			}
+			return TRUE;
+		}
+		/* We have "felt" this kind of object already before */
+	        o_ptr->ident |= (ID_SENSE);
+	}
+	return FALSE;
 }

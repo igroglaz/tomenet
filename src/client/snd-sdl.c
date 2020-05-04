@@ -170,6 +170,9 @@ static s32b channel_player_id[MAX_CHANNELS];
 /* Music Array */
 static song_list songs[MUSIC_MAX];
 
+/* Jukebox music */
+static int jukebox_org = -1, jukebox_playing = -1;
+
 
 /*
  * Shut down the sound system and free resources.
@@ -1805,6 +1808,12 @@ static bool play_music(int event) {
 	   should not stop the current music if it fails to play. */
 	if (event == -1) return TRUE;
 
+	/* Jukebox hack: Don't interrupt current jukebox song, but remember event for later */
+	if (jukebox_playing != -1 && jukebox_playing != event) {
+		jukebox_org = event;
+		return TRUE;
+	}
+
 	/* We previously failed to play both music and alternative music.
 	   Stop currently playing music before returning */
 	if (event == -2) {
@@ -2263,7 +2272,7 @@ errr re_init_sound_sdl(void) {
 	//cfg_audio_master_volume = 75, cfg_audio_music_volume = 100, cfg_audio_sound_volume = 100, cfg_audio_weather_volume = 100;
 
 	//grid_weather_volume = 100, grid_ambient_volume = 100, grid_weather_volume_goal = 100, grid_ambient_volume_goal = 100, grid_weather_volume_step, grid_ambient_volume_step;
-	bell_sound_idx = -1, page_sound_idx = -1, warning_sound_idx = -1, rain1_sound_idx = -1, rain2_sound_idx = -1, snow1_sound_idx = -1, snow2_sound_idx = -1, browse_sound_idx = -1, browsebook_sound_idx = -1;
+	bell_sound_idx = -1, page_sound_idx = -1, warning_sound_idx = -1, rain1_sound_idx = -1, rain2_sound_idx = -1, snow1_sound_idx = -1, snow2_sound_idx = -1, browse_sound_idx = -1, browsebook_sound_idx = -1, thunder_sound_idx = -1;
 
 
 	/* --- init --- */
@@ -2569,8 +2578,8 @@ void do_cmd_options_sfx_sdl(void) {
 		}
 
 		/* display static selector */
-		Term_putstr(horiz_offset + 1, vertikal_offset + 10, -1, TERM_ORANGE, ">>>");
-		Term_putstr(horiz_offset + 1 + 12 + 50 + 1, vertikal_offset + 10, -1, TERM_ORANGE, "<<<");
+		Term_putstr(horiz_offset + 1, vertikal_offset + 10, -1, TERM_SELECTOR, ">>>");
+		Term_putstr(horiz_offset + 1 + 12 + 50 + 1, vertikal_offset + 10, -1, TERM_SELECTOR, "<<<");
 
 		/* Place Cursor */
 		//Term_gotoxy(20, vertikal_offset + y);
@@ -2709,6 +2718,9 @@ void do_cmd_options_sfx_sdl(void) {
 					play_sound_ambient(j_sel);
 				}
 			}
+			/* actually advance down the list too */
+			sound(j_sel, SFX_TYPE_STOP, 100, 0);
+			y = (y + 1 + audio_sfx) % audio_sfx;
 			break;
 		case 'y':
 			samples[j_sel].disabled = FALSE;
@@ -2721,11 +2733,17 @@ void do_cmd_options_sfx_sdl(void) {
 				ambient_current = -1; //allow restarting it
 				play_sound_ambient(j_sel);
 			}
+			/* actually advance down the list too */
+			sound(j_sel, SFX_TYPE_STOP, 100, 0);
+			y = (y + 1 + audio_sfx) % audio_sfx;
 			break;
 		case 'n':
 			samples[j_sel].disabled = TRUE;
 			if (j_sel == weather_current && weather_channel != -1 && Mix_Playing(weather_channel)) Mix_HaltChannel(weather_channel);
 			if (j_sel == ambient_current && ambient_channel != -1 && Mix_Playing(ambient_channel)) Mix_HaltChannel(ambient_channel);
+			/* actually advance down the list too */
+			sound(j_sel, SFX_TYPE_STOP, 100, 0);
+			y = (y + 1 + audio_sfx) % audio_sfx;
 			break;
 
 		case '\r':
@@ -2785,7 +2803,8 @@ void do_cmd_options_mus_sdl(void) {
  #ifdef JUKEBOX_INSTANT_PLAY
 	bool dis;
  #endif
-	int jukebox_org = music_cur;
+
+	jukebox_org = music_cur;
 #endif
 
 	//ANGBAND_DIR_XTRA_SOUND/MUSIC are NULL in quiet_mode!
@@ -2863,8 +2882,8 @@ void do_cmd_options_mus_sdl(void) {
 		}
 
 		/* display static selector */
-		Term_putstr(horiz_offset + 1, vertikal_offset + 10, -1, TERM_ORANGE, ">>>");
-		Term_putstr(horiz_offset + 1 + 12 + 50 + 1, vertikal_offset + 10, -1, TERM_ORANGE, "<<<");
+		Term_putstr(horiz_offset + 1, vertikal_offset + 10, -1, TERM_SELECTOR, ">>>");
+		Term_putstr(horiz_offset + 1 + 12 + 50 + 1, vertikal_offset + 10, -1, TERM_SELECTOR, "<<<");
 
 		/* Place Cursor */
 		//Term_gotoxy(20, vertikal_offset + y);
@@ -2878,11 +2897,14 @@ void do_cmd_options_mus_sdl(void) {
 		/* Analyze */
 		switch (ch) {
 		case ESCAPE:
+			jukebox_playing = -1;
 #ifdef ENABLE_JUKEBOX
  #ifdef JUKEBOX_INSTANT_PLAY
-			/* Note that this will also insta-halt current music if it happens to be <disabled>,
-			   so no need for us to check here for songs[].disabled explicitely actually. */
+			/* Note that this will also insta-halt current music if it happens to be <disabled> and different from our jukebox piece,
+			   so no need for us to check here for songs[].disabled explicitely for that particular case.
+			   However, if the currently jukeboxed song is the same one as the disabled one we do need to halt it. */
 			if (jukebox_org != music_cur) play_music(jukebox_org);
+			else if (songs[jukebox_org].disabled) play_music(-2);
  #else
 			if (jukebox_org != music_cur) {
 				if (songs[jukebox_org].disabled) play_music(-2);
@@ -2890,6 +2912,8 @@ void do_cmd_options_mus_sdl(void) {
 			}
  #endif
 #endif
+			jukebox_org = -1;
+
 			/* auto-save */
 			path_build(buf, 1024, ANGBAND_DIR_XTRA_MUSIC, "music.cfg");
 #ifndef WINDOWS
@@ -3025,11 +3049,13 @@ void do_cmd_options_mus_sdl(void) {
  #ifdef JUKEBOX_INSTANT_PLAY
 			dis = songs[j_sel].disabled;
 			songs[j_sel].disabled = FALSE;
+			jukebox_playing = j_sel;
 			play_music_instantly(j_sel);
 			songs[j_sel].disabled = dis;
  #else
 			if (j_sel == music_cur) break;
 			if (songs[j_sel].disabled) break;
+			jukebox_playing = j_sel;
 			play_music(j_sel);
  #endif
 			break;

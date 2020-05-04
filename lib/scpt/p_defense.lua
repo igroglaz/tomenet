@@ -139,7 +139,7 @@ HRESISTS_II = add_spell {
 		fire_ball(Ind, GF_RESACID_PLAYER, 0, dur, 1, "")
 	end,
 	["info"] = 	function()
-			return "Res heat/cold/elec/acid, dur "..(get_level(Ind, HRESISTS_I, 50) + 15)..".."..(get_level(Ind, HRESISTS_I, 50) + 25)
+			return "Base resist, dur "..(get_level(Ind, HRESISTS_I, 50) + 15)..".."..(get_level(Ind, HRESISTS_I, 50) + 25)
 	end,
 	["desc"] = 	{
 			"Lets you resist heat, cold, lightning and acid.",
@@ -205,7 +205,7 @@ DISPELMAGIC = add_spell {
 	["name"] = 	"Dispel Magic",
 	["name2"] = 	"DispMag",
 	["school"] = 	{SCHOOL_HDEFENSE},
-	["level"] = 	18,
+	["level"] = 	10,
 	["mana"] = 	30,
 	["mana_max"] = 	30,
 	["fail"] = 	10,
@@ -217,7 +217,7 @@ DISPELMAGIC = add_spell {
 	["spell"] = 	function()
 			set_blind(Ind, 0)
 			set_confused(Ind, 0)
-			if get_level(Ind, DISPELMAGIC, 50) >= 8 then
+			if get_level(Ind, DISPELMAGIC, 50) >= 7 then
 				set_image(Ind, 0)
 			end
 			if get_level(Ind, DISPELMAGIC, 50) >= 13 then
@@ -232,7 +232,7 @@ DISPELMAGIC = add_spell {
 	["desc"] = 	{
 			"Dispels a lot of magic that can affect you, be it good or bad.",
 			"Level 1: blindness and confusion.",
-			"Level 8: hallucination.",
+			"Level 7: hallucination.",
 			"Level 13: speed (both bad or good) and stun.",
 	}
 }

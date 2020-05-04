@@ -35,6 +35,9 @@
 #endif
 
 
+char _soundpack[1024], _musicpack[1024];
+
+
 //#define WINDOWS
 
 
@@ -42,11 +45,11 @@
 static short int posix_terminal = -1;//5
 
 unsigned char is_linux = 1;
-#ifdef __x86_64__
+ #ifdef __x86_64__
 unsigned char is_64bit = 1;
-#else
+ #else
 unsigned char is_64bit = 0;
-#endif
+ #endif
 #endif
 
 GtkWidget *top_window;
@@ -123,6 +126,61 @@ void show_done(gpointer window) {
 	gtk_widget_destroy(dialog);
 }
 
+#ifdef WINDOWS
+ /* 'start' for async */
+void web_tomenet(GtkButton *button, gpointer label) {
+	ShellExecute(NULL, "open", "https://www.tomenet.eu/", NULL, NULL, SW_SHOWNORMAL);
+}
+void web_sound(GtkButton *button, gpointer label) {
+	ShellExecute(NULL, "open", _soundpack, NULL, NULL, SW_SHOWNORMAL);
+}
+void web_music(GtkButton *button, gpointer label) {
+	ShellExecute(NULL, "open", _musicpack, NULL, NULL, SW_SHOWNORMAL);
+}
+#elif defined(OSX)
+ /* '&' for async - actually not needed on X11 though, program will still continue to execute
+    because xdg-open spawns the file manager asynchronously and returns right away */
+void web_tomenet(GtkButton *button, gpointer label) {
+	char tmp[1024];
+
+	sprintf(tmp, "open \"%s\"", "https://www.tomenet.eu/");
+	system(tmp);
+}
+void web_sound(GtkButton *button, gpointer label) {
+	char tmp[1024];
+
+	sprintf(tmp, "open \"%s\"", _soundpack);
+	system(tmp);
+}
+void web_music(GtkButton *button, gpointer label) {
+	char tmp[1024];
+
+	sprintf(tmp, "open \"%s\"", _musicpack);
+	system(tmp);
+}
+#else /* assume USE_X11 */
+ /* '&' for async - actually not needed on X11 though, program will still continue to execute
+    because xdg-open spawns the file manager asynchronously and returns right away */
+void web_tomenet(GtkButton *button, gpointer label) {
+	char tmp[1024];
+
+	sprintf(tmp, "xdg-open \"%s\"", "https://www.tomenet.eu/");
+	system(tmp);
+}
+void web_sound(GtkButton *button, gpointer label) {
+	char tmp[1024];
+
+	sprintf(tmp, "xdg-open \"%s\"", _soundpack);
+	system(tmp);
+}
+void web_music(GtkButton *button, gpointer label) {
+	char tmp[1024];
+
+	sprintf(tmp, "xdg-open \"%s\"", _musicpack);
+	system(tmp);
+}
+#endif
+
 //void install_client(GtkWidget *widget, gpointer label) {
 void install_client(GtkButton *button, gpointer label) {
 	long res = 0;
@@ -135,7 +193,7 @@ void install_client(GtkButton *button, gpointer label) {
 	//TomeNET-latest-client.zip
 	char _download[1024], _latest_install[1024];//, _latest_client[1024];
 
-	strcpy(_download, "http://www.tomenet.eu/downloads/");
+	strcpy(_download, "https://www.tomenet.eu/downloads/");
 	sprintf(_latest_install, "%sTomeNET-latest-install.exe", _download);
 	//sprintf(_latest_client, "%sTomeNET-latest-client.zip", _download);
 
@@ -173,7 +231,7 @@ void install_client(GtkButton *button, gpointer label) {
 	FILE *fp;
 
 	char _download[1024];
-	strcpy(_download, "http://www.tomenet.eu/downloads/");
+	strcpy(_download, "https://www.tomenet.eu/downloads/");
 
 
 	if (is_linux) {
@@ -252,14 +310,6 @@ void install_sound(GtkButton *button, gpointer label) {
 #ifdef WINDOWS
 	char path[1024], out_val[1024];
 	FILE *fp;
-	char _soundpack[1024];
-	strcpy(_soundpack, "http://www.mediafire.com/download/issv5sdv7kv3odq/TomeNET-soundpack.7z");
-	fp = fopen("TomeNET-Updater.cfg", "r");
-	if (fp) {
-		//fgets(out_val, 1024, fp);
-		if (fgets(out_val, 1024, fp)) strcpy(_soundpack, out_val);
-		fclose(fp);
-	}
 
 	remove("TomeNET-soundpack.7z");
 
@@ -323,10 +373,11 @@ exit(0);
 		    "downloader currently does not support, sorry!\n \nPlease just try again later.");
 		gtk_dialog_run (GTK_DIALOG (dialog));
 		gtk_widget_destroy (dialog);
- 
+
 		gtk_button_set_label(button, "Install/update sound pack");
 		while(gtk_events_pending())
 		    gtk_main_iteration();
+		remove("temp.html");
 		return;
 	}
 	remove("temp.html");
@@ -343,6 +394,7 @@ exit(0);
 	system(out_val);
 	system("rmdir /S /Q sound");
 #else /* assume posix */
+ #if 0 /* Use plowshare's mediafire.sh module -- currently broken */
 	char cwd_path[1024], out_val[1024];
 	void *cwd;
 	FILE *fp;
@@ -393,6 +445,108 @@ exit(0);
 		res = -1;
 		show_error_broken(top_window);
 	}
+ #else /* Use same dumb approach like on WINDOWS.. */
+	char path[1024], tmp[1024];
+
+	char cwd_path[1024], out_val[1024];
+	void *cwd;
+	FILE *fp;
+
+	remove("TomeNET-soundpack.7z");
+
+	/* download */
+	sprintf(tmp, "wget -O temp.html --dot-style=mega %s", _soundpack);
+	system(tmp);
+	fp = fopen("temp.html", "r");
+	out_val[0] = out_val[1] = 0;
+	path[0] = 0;
+	while (!feof(fp)) {
+		fread(out_val + 5, sizeof(char), 1000, fp);
+		out_val[1005] = 0;
+		if (strstr(out_val, "kNO = ")) {
+			/* extract URL */
+			strncpy(path, strstr(out_val, "kNO = ") + 7, 1000);
+			*(strstr(path, "\"")) = 0;
+			break;
+		}
+		/* wrap around (n-1) chars regarding our search string */
+		out_val[0] = out_val[1000];//k
+		out_val[1] = out_val[1001];//N
+		out_val[2] = out_val[1002];//O
+		out_val[3] = out_val[1003];// 
+		out_val[4] = out_val[1004];// =
+	}
+	fclose(fp);
+	/* no valid dl link? We probably got a captcha request -_- */
+	if (!path[0]) {
+		GtkWidget *dialog;
+		dialog = gtk_message_dialog_new(GTK_WINDOW(top_window),
+		    GTK_DIALOG_DESTROY_WITH_PARENT,
+		    GTK_MESSAGE_ERROR,
+		    GTK_BUTTONS_CLOSE,
+		    "Error - the download server received too many requests\n" \
+		    "and responded with a captcha request which this\n" \
+		    "downloader currently does not support, sorry!\n \nPlease just try again later.");
+		gtk_dialog_run (GTK_DIALOG (dialog));
+		gtk_widget_destroy (dialog);
+
+		gtk_button_set_label(button, "Install/update sound pack");
+		while(gtk_events_pending())
+		    gtk_main_iteration();
+		remove("temp.html");
+		return;
+	}
+	remove("temp.html");
+	//system(format("wget --dot-style=mega %s", path));
+
+	/* download */
+	/* get own app path and prepare path'ed batch file */
+	cwd = getcwd(out_val, sizeof(out_val));
+	if (!cwd) return;//paranoia?
+	strcpy(cwd_path, out_val);
+	strcat(cwd_path, "/updater/_update_sp.sh");
+	fp = fopen(cwd_path, "w");
+	if (!fp) return;//paranoia?
+	/* download */
+	fprintf(fp, "cd %s/updater\n", out_val);
+	fprintf(fp, "rm result.tmp\n");
+	fprintf(fp, "wget --dot-style=mega %s", path);
+	/* move to correct location and extract */
+	fprintf(fp, "mv TomeNET-soundpack.7z ..\n");
+	fprintf(fp, "mkdir -p %s/lib/xtra\n", out_val); /* in case someone deleted his whole lib folder */
+	fprintf(fp, "cd %s/lib/xtra\n", out_val);
+	fprintf(fp, "7z x -y ../../TomeNET-soundpack.7z\n");
+	/* done, wait for confirmation */
+	fprintf(fp, "echo\n");
+	fprintf(fp, "read -p \"Press ENTER to finish.\"\n");
+	fclose(fp);
+	/* make the batch file executable */
+	sprintf(out_val, "chmod +x %s", cwd_path);
+	system(out_val);
+	/* execute the batch file */
+	switch (posix_terminal) {
+	case 0: sprintf(out_val, "xfce4-terminal --disable-server -x %s", cwd_path); break;
+	case 1: sprintf(out_val, "konsole -e %s", cwd_path); break;
+	case 2: sprintf(out_val, "gnome-terminal -e %s", cwd_path); break;
+	case 3: sprintf(out_val, "xterm -e %s", cwd_path); break;
+	case 4: sprintf(out_val, "bash -c %s", cwd_path); break;
+	case 5: sprintf(out_val, "sh -c %s", cwd_path); break;
+	}
+
+	/* download + extract */
+	system(out_val);
+
+	fp = fopen("updater/result.tmp", "r");
+	if (fp) {//~paranoia?
+		fgets(out_val, 20, fp);
+		res = atoi(out_val);
+		if (res != 0) show_error_broken(top_window);
+		fclose(fp);
+	} else {
+		res = -1;
+		show_error_broken(top_window);
+	}
+ #endif
 #endif
 
 	if (!res) show_done(top_window);
@@ -413,15 +567,6 @@ void install_music(GtkButton *button, gpointer label) {
 #ifdef WINDOWS
 	char path[1024], out_val[1024];
 	FILE *fp;
-	char _musicpack[1024];
-	strcpy(_musicpack, "http://www.mediafire.com/download/3j87kp3fgzpqrqn/TomeNET-musicpack.7z");
-	fp = fopen("TomeNET-Updater.cfg", "r");
-	if (fp) {
-		//fgets(out_val, 1024, fp);
-		fgets(out_val, 1024, fp);
-		if (fgets(out_val, 1024, fp)) strcpy(_musicpack, out_val);
-		fclose(fp);
-	}
 
 	remove("TomeNET-musicpack.7z");
 	/* download */
@@ -475,10 +620,11 @@ void install_music(GtkButton *button, gpointer label) {
 		    "downloader currently does not support, sorry!\n \nPlease just try again later.");
 		gtk_dialog_run (GTK_DIALOG (dialog));
 		gtk_widget_destroy (dialog);
- 
+
 		gtk_button_set_label(button, "Install/update music pack");
 		while(gtk_events_pending())
 		    gtk_main_iteration();
+		remove("temp.html");
 		return;
 	}
 	remove("temp.html");
@@ -495,6 +641,7 @@ void install_music(GtkButton *button, gpointer label) {
 	system(out_val);
 	system("rmdir /S /Q music");
 #else /* assume posix */
+ #if 0 /* Use plowshare's mediafire.sh module -- currently broken */
 	char cwd_path[1024], out_val[1024];
 	void *cwd;
 	FILE *fp;
@@ -545,6 +692,108 @@ void install_music(GtkButton *button, gpointer label) {
 		res = -1;
 		show_error_broken(top_window);
 	}
+ #else /* Use same dumb approach like on WINDOWS.. */
+	char path[1024], tmp[1024];
+
+	char cwd_path[1024], out_val[1024];
+	void *cwd;
+	FILE *fp;
+
+	remove("TomeNET-musicpack.7z");
+
+	/* download */
+	sprintf(tmp, "wget -O temp.html --dot-style=mega %s", _musicpack);
+	system(tmp);
+	fp = fopen("temp.html", "r");
+	out_val[0] = out_val[1] = 0;
+	path[0] = 0;
+	while (!feof(fp)) {
+		fread(out_val + 5, sizeof(char), 1000, fp);
+		out_val[1005] = 0;
+		if (strstr(out_val, "kNO = ")) {
+			/* extract URL */
+			strncpy(path, strstr(out_val, "kNO = ") + 7, 1000);
+			*(strstr(path, "\"")) = 0;
+			break;
+		}
+		/* wrap around (n-1) chars regarding our search string */
+		out_val[0] = out_val[1000];//k
+		out_val[1] = out_val[1001];//N
+		out_val[2] = out_val[1002];//O
+		out_val[3] = out_val[1003];// 
+		out_val[4] = out_val[1004];// =
+	}
+	fclose(fp);
+	/* no valid dl link? We probably got a captcha request -_- */
+	if (!path[0]) {
+		GtkWidget *dialog;
+		dialog = gtk_message_dialog_new(GTK_WINDOW(top_window),
+		    GTK_DIALOG_DESTROY_WITH_PARENT,
+		    GTK_MESSAGE_ERROR,
+		    GTK_BUTTONS_CLOSE,
+		    "Error - the download server received too many requests\n" \
+		    "and responded with a captcha request which this\n" \
+		    "downloader currently does not support, sorry!\n \nPlease just try again later.");
+		gtk_dialog_run (GTK_DIALOG (dialog));
+		gtk_widget_destroy (dialog);
+
+		gtk_button_set_label(button, "Install/update music pack");
+		while(gtk_events_pending())
+		    gtk_main_iteration();
+		remove("temp.html");
+		return;
+	}
+	remove("temp.html");
+	//system(format("wget --dot-style=mega %s", path));
+
+	/* download */
+	/* get own app path and prepare path'ed batch file */
+	cwd = getcwd(out_val, sizeof(out_val));
+	if (!cwd) return;//paranoia?
+	strcpy(cwd_path, out_val);
+	strcat(cwd_path, "/updater/_update_mp.sh");
+	fp = fopen(cwd_path, "w");
+	if (!fp) return;//paranoia?
+	/* download */
+	fprintf(fp, "cd %s/updater\n", out_val);
+	fprintf(fp, "rm result.tmp\n");
+	fprintf(fp, "wget --dot-style=mega %s", path);
+	/* move to correct location and extract */
+	fprintf(fp, "mv TomeNET-musicpack.7z ..\n");
+	fprintf(fp, "mkdir -p %s/lib/xtra\n", out_val); /* in case someone deleted his whole lib folder */
+	fprintf(fp, "cd %s/lib/xtra\n", out_val);
+	fprintf(fp, "7z x -y ../../TomeNET-musicpack.7z\n");
+	/* done, wait for confirmation */
+	fprintf(fp, "echo\n");
+	fprintf(fp, "read -p \"Press ENTER to finish.\"\n");
+	fclose(fp);
+	/* make the batch file executable */
+	sprintf(out_val, "chmod +x %s", cwd_path);
+	system(out_val);
+	/* execute the batch file */
+	switch (posix_terminal) {
+	case 0: sprintf(out_val, "xfce4-terminal --disable-server -x %s", cwd_path); break;
+	case 1: sprintf(out_val, "konsole -e %s", cwd_path); break;
+	case 2: sprintf(out_val, "gnome-terminal -e %s", cwd_path); break;
+	case 3: sprintf(out_val, "xterm -e %s", cwd_path); break;
+	case 4: sprintf(out_val, "bash -c %s", cwd_path); break;
+	case 5: sprintf(out_val, "sh -c %s", cwd_path); break;
+	}
+
+	/* download + extract */
+	system(out_val);
+
+	fp = fopen("updater/result.tmp", "r");
+	if (fp) {//~paranoia?
+		fgets(out_val, 20, fp);
+		res = atoi(out_val);
+		if (res != 0) show_error_broken(top_window);
+		fclose(fp);
+	} else {
+		res = -1;
+		show_error_broken(top_window);
+	}
+ #endif
 #endif
 
 	if (!res) show_done(top_window);
@@ -565,7 +814,7 @@ void install_guide(GtkButton *button, gpointer label) {
 #ifdef WINDOWS
 	char _latest_install[1024];
 
-	strcpy(_latest_install, "http://www.tomenet.eu/TomeNET-Guide.txt");
+	strcpy(_latest_install, "https://www.tomenet.eu/TomeNET-Guide.txt");
 
 	remove("TomeNET-Guide.txt");
  #if 0 /* winbash is dysfunctional, no alternatives available ----------------------------------------- */
@@ -588,7 +837,7 @@ void install_guide(GtkButton *button, gpointer label) {
 	char out_val[3];
 
 	remove("TomeNET-Guide.txt");
-	system("wget http://www.tomenet.eu/TomeNET-Guide.txt");
+	system("wget https://www.tomenet.eu/TomeNET-Guide.txt");
 
 	fp = fopen("TomeNET-Guide.txt", "r");
 	if (fp) {//~paranoia?
@@ -638,14 +887,20 @@ int main(int argc, char *argv[]) {
 	GtkWidget *insguide;
 #endif
 
+	GtkWidget *webtomenet;
+	GtkWidget *websfx;
+	GtkWidget *webmus;
+
 	gtk_init(&argc, &argv);
 	top_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 
-	gtk_window_set_title(GTK_WINDOW(top_window), "TomeNET Updater v1.0");
+	gtk_window_set_title(GTK_WINDOW(top_window), "TomeNET Updater v1.2");
 #ifndef GUIDE
-	gtk_window_set_default_size(GTK_WINDOW(top_window), 320, 220);
+	//gtk_window_set_default_size(GTK_WINDOW(top_window), 320, 220);
+	gtk_window_set_default_size(GTK_WINDOW(top_window), 320, 220 + 125);
 #else
-	gtk_window_set_default_size(GTK_WINDOW(top_window), 320, 270);
+	//gtk_window_set_default_size(GTK_WINDOW(top_window), 320, 270);
+	gtk_window_set_default_size(GTK_WINDOW(top_window), 320, 270 + 125);
 #endif
 	gtk_window_set_position(GTK_WINDOW(top_window), GTK_WIN_POS_CENTER);
 	//gtk_window_set_icon(GTK_WINDOW(window), create_pixbuf("updater/tomenet4.png"));
@@ -656,24 +911,36 @@ int main(int argc, char *argv[]) {
 	gtk_container_add(GTK_CONTAINER(top_window), frame);
 
 	label = gtk_label_new("  Make sure to quit and close the\ngame before running this updater!");
-	gtk_fixed_put(GTK_FIXED(frame), label, 20, 15);
+	gtk_fixed_put(GTK_FIXED(frame), label, 45, 15);
 
 	insclient = gtk_button_new_with_label("Install/update game client");
 	gtk_widget_set_size_request(insclient, 255, 35);
 	gtk_fixed_put(GTK_FIXED(frame), insclient, 30, 70);
 
+	webtomenet = gtk_button_new_with_label("Go to TomeNET website");
+	gtk_widget_set_size_request(webtomenet, 255, 25);
+	gtk_fixed_put(GTK_FIXED(frame), webtomenet, 30, 110);
+
 	inssfx = gtk_button_new_with_label("Install/update sound pack");
 	gtk_widget_set_size_request(inssfx, 255, 35);
-	gtk_fixed_put(GTK_FIXED(frame), inssfx, 30, 120);
+	gtk_fixed_put(GTK_FIXED(frame), inssfx, 30, 160);
+
+	websfx = gtk_button_new_with_label("Go to sound pack download");
+	gtk_widget_set_size_request(websfx, 255, 25);
+	gtk_fixed_put(GTK_FIXED(frame), websfx, 30, 200);
 
 	insmus = gtk_button_new_with_label("Install/update music pack");
 	gtk_widget_set_size_request(insmus, 255, 35);
-	gtk_fixed_put(GTK_FIXED(frame), insmus, 30, 170);
+	gtk_fixed_put(GTK_FIXED(frame), insmus, 30, 250);
+
+	webmus = gtk_button_new_with_label("Go to music pack download");
+	gtk_widget_set_size_request(webmus, 255, 25);
+	gtk_fixed_put(GTK_FIXED(frame), webmus, 30, 290);
 
 #ifdef GUIDE
 	insguide = gtk_button_new_with_label("Install/update guide");
 	gtk_widget_set_size_request(insguide, 255, 35);
-	gtk_fixed_put(GTK_FIXED(frame), insguide, 30, 220);
+	gtk_fixed_put(GTK_FIXED(frame), insguide, 30, 340);
 #endif
 
 	gtk_widget_show_all(top_window);
@@ -684,9 +951,11 @@ int main(int argc, char *argv[]) {
 #ifdef GUIDE
 	g_signal_connect(insguide, "clicked", G_CALLBACK(install_guide), NULL);
 #endif
+	g_signal_connect(webtomenet, "clicked", G_CALLBACK(web_tomenet), NULL);
+	g_signal_connect(websfx, "clicked", G_CALLBACK(web_sound), NULL);
+	g_signal_connect(webmus, "clicked", G_CALLBACK(web_music), NULL);
 
 	g_signal_connect_swapped(G_OBJECT(top_window), "destroy", G_CALLBACK(gtk_main_quit), NULL);
-
 
 	/* check whether 7-zip is installed, otherwise
 	   give error message about it and terminate */
@@ -828,6 +1097,15 @@ int main(int argc, char *argv[]) {
 	}
  #endif
 #endif
+
+	strcpy(_soundpack, "http://www.mediafire.com/download/issv5sdv7kv3odq/TomeNET-soundpack.7z");
+	strcpy(_musicpack, "http://www.mediafire.com/download/3j87kp3fgzpqrqn/TomeNET-musicpack.7z");
+	fp = fopen("TomeNET-Updater.cfg", "r");
+	if (fp) {
+		if (fgets(buf, 1024, fp)) strcpy(_soundpack, buf);
+		if (fgets(buf, 1024, fp)) strcpy(_musicpack, buf);
+		fclose(fp);
+	}
 
 	gtk_main();
 

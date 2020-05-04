@@ -149,6 +149,7 @@ audio_sfx = {
     "phase_door",
     "puff",
     "teleport",
+    "recall",
     "curse",
     "heal",
     "summon",
@@ -292,6 +293,7 @@ audio_sfx = {
     "animal_seagull",
     "animal_toad",
     "animal_wolf",
+    "animal_birdofprey",
 }
 function get_sound_name(idx)
     if audio_sfx[idx + 1] == nil then return "" end
@@ -425,6 +427,7 @@ audio_bgm = {
     "store_dungeon",
     "store_casino",
     "store_service",
+    "extra",
 }
 function get_music_name(idx)
     if audio_bgm[idx + 1] == nil then return "" end

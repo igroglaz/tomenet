@@ -566,10 +566,10 @@ static void print_immunities() {
 	put_str("b) None (pick randomly each time)", j++, col);
 
 	prt("", j, col);
-	put_str("c) Lightning", j++, col);
+	put_str("c) Electricity", j++, col);
 
 	prt("", j, col);
-	put_str("d) Frost", j++, col);
+	put_str("d) Cold", j++, col);
 
 	prt("", j, col);
 	put_str("e) Acid", j++, col);
@@ -718,8 +718,8 @@ void do_mimic() {
 				/* Find the power it is related to */
 				if (!strcasecmp(buf, "Check")) c = 1;
 				else if (!strcasecmp(buf, "None")) c = 2;
-				else if (!strcasecmp(buf, "Lightning")) c = 3;
-				else if (!strcasecmp(buf, "Frost")) c = 4;
+				else if (!strcasecmp(buf, "Electricity")) c = 3;
+				else if (!strcasecmp(buf, "Cold")) c = 4;
 				else if (!strcasecmp(buf, "Acid")) c = 5;
 				else if (!strcasecmp(buf, "Fire")) c = 6;
 				else if (!strcasecmp(buf, "Poison")) c = 7;
@@ -804,7 +804,7 @@ bool get_item_hook_find_spell(int *item, int mode) {
 
 	(void) mode; /* suppress compiler warning */
 
-	strcpy(buf, "Manathrust");
+	strcpy(buf, "");
 	if (!get_string("Spell name? ", buf, 79))
 		return FALSE;
 	sprintf(buf2, "return find_spell(\"%s\")", buf);

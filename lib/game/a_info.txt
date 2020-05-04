@@ -408,7 +408,7 @@ W:70:30:80:150000
 P:9:0d0:0:0:25
 F:FREE_ACT | RES_BLIND | RES_CONF | RES_FEAR | DRAIN_MANA |
 F:REFLECT | RES_NEXUS | SH_FIRE | SUST_INT | SUST_CON | SUST_CHR |
-F:STEALTH | ESP_DRAGONRIDER | CON | CHR | INT | ACTIVATE | LEVITATE |
+F:ESP_DRAGONRIDER | CON | CHR | INT | ACTIVATE | LEVITATE |
 F:RES_ACID | RES_ELEC | IM_COLD | AGGRAVATE | HEAVY_CURSE | CURSED
 F:REGEN_MANA | SPECIAL_GENE | SPEED | HIDE_TYPE
 D:The flying suit of Mardra, very powerful armour that protects
@@ -1159,7 +1159,7 @@ F:FREE_ACT | RES_COLD | RES_LITE | LITE1 | SEE_INVIS | SLOW_DIGEST | REGEN |
 F:ACTIVATE | SHOW_MODS | WHITE_LIGHT
 D:The weapon of Fingolfin, High King of the Noldor; it shines like a column
 D:of ice lit by light unquenchable. Morgoth came but unwillingly to meet it
-D:of old; his lame foot will remind him of its might should be meet it again.
+D:of old; his lame foot will remind him of its might should he meet it again.
 
 
 # The Claymore 'Anduril'
@@ -1687,9 +1687,7 @@ F:INT | WIS | CHR | MANA | SEARCH | ACTIVATE | SEE_INVIS | ESP_EVIL
 F:SLAY_EVIL | SLAY_TROLL | SLAY_ORC | SLAY_DRAGON | SLAY_UNDEAD | SLAY_DEMON
 F:HOLD_LIFE | RES_SHARDS | RES_FIRE | RES_COLD | RES_ELEC | BRAND_FIRE
 F:SHOW_MODS | HIDE_TYPE | SPECIAL_GENE
-#D:A staff tall and sturdy, with rough-hewn runes that invoke the element of
-#D:Earth, and which strikes down all creatures who live in the shadow of
-#D:mountains.
+#maybe need something else here..
 
 
 # The Mace of Disruption 'Deathwreaker'
@@ -3102,8 +3100,8 @@ P:0:7d10:25:30:0
 F:SHOW_MODS | STR | CON | RES_FEAR | FREE_ACT | IM_ELEC | IM_FIRE
 F:RES_LITE | RES_DARK | SEE_INVIS | SLAY_EVIL | SLAY_GIANT |
 F:SLAY_DEMON | SLAY_DRAGON | SLAY_UNDEAD | SLAY_ANIMAL | AGGRAVATE
-D:An axe of amok, cracking skulls and splitting torsos, causing
-D:mad terror and showing no mercy to anything in its way.
+D:Handled calm at first, awaking only when combat draws near, almost like
+D:possessed, this axe splits skull and torso of even the mightiest foes.
 
 
 # Broad Spear 'Impaler'
@@ -3245,8 +3243,7 @@ N:261:of the Dungeon Master
 I:32:15:0
 W:127:255:5:0
 P:0:0d0:0:0:0
-F:INSTA_ART | HIDE_TYPE
-# | AUTO_ID
+F:INSTA_ART | HIDE_TYPE | ACTIVATE
 D:Sees the things that can't be seen.
 D:(Not to be acquired by players!)
 

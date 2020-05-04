@@ -627,7 +627,7 @@ struct cave_type {
 	/* Adding 1byte in this struct costs 520Kb memory, in average */
 	/* This should be replaced by 'stackable c_special' code -
 	 * let's wait for evileye to to this :)		- Jir - */
-	int effect, effect_xtra;	/* The lasting effects */
+	int effect, effect_xtra, effect_past;	/* The lasting effects */
 
 #ifdef HOUSE_PAINTING
 	byte colour;	/* colour that overrides the usual colour of a feature */
@@ -790,6 +790,9 @@ struct object_type {
 	s32b iron_trade;		/* Needed for the last survivor after a party was erased: Former party of the last player who picked it up */
 	/* ..and for IDDC_RESTRICTED_TRADING : */
 	s32b iron_turn;			/* Turn when it was picked up, to compare with player's party-join turn. */
+
+	/* For replacing the 255 - iy monster-trap hack, and also no more setting iy and ix to 0 for monster-inventory items */
+	byte embed;			/* 1: Object is contained within a feat (trapkit/trapload in a monster trap); note that 'Object is held in a monster's inventory' is already indicated by held_m_idx instead. */
 };
 
 /* Old object_type for estate restoration: "v2" (2017-2019 included, but might lack iron_turn, see more typedef below) */
@@ -1313,6 +1316,8 @@ struct monster_type {
 	/* Prevent a monster getting hit by cumulative projections caused recursively in project()
 		(except for intended effects such as runecraft sub-explosions). */
 	s32b hit_proj_id;
+	/* Prevent a monster that dies from getting hit by potion effects caused by the potions it drops on death */
+	bool dead;
 
 	u16b do_dist;			/* execute all monster teleportation at the end of turn */
 
@@ -2347,7 +2352,7 @@ struct player_type {
 	worldpos recall_pos;		/* what position to recall to */
 	u16b town_x, town_y;
 
-	int avoid_loc;			/* array size of locations to avoid when changing wpos (recalling) */
+	int avoid_loc;			/* array size of locations to avoid when changing wpos (recalling not next to a DK escape beacon) */
 	int *avoid_loc_x, *avoid_loc_y;
 
 	s16b stat_max[6];		/* Current "maximal" stat values */
@@ -2507,8 +2512,8 @@ struct player_type {
 	bool wide_scroll_margin;
 	bool always_repeat;
 	bool fail_no_melee;
-	byte temp_misc_1; //0x01: door-mimic open state; 0x02: ppage, 0x04: gpage
-	byte temp_misc_2; //0x01: snowed, 0x02: random dungeon town handling, 0x04: loading old savegames before separate depths;
+	byte temp_misc_1; //0x01: door-mimic open state; 0x02: ppage, 0x04: gpage, 0x08: snowed, 0x10: random dungeon town handling, 0x20: loading old savegames before separate depths, 0x40: able to test features;
+	byte temp_misc_2; //timer for snowed
 
 	bool page_on_privmsg;
 	bool page_on_afk_privmsg;
@@ -2615,6 +2620,9 @@ struct player_type {
 #endif
 	s16b current_curse;
 	s16b current_tome_creation;	/* adding a spell scroll to a custom tome - C. Blue */
+#ifdef ENABLE_EXCAVATION
+	s16b current_chemical;
+#endif
 	s16b current_rune;
 	s16b current_force_stack;	/* which level 0 item we're planning to stack */
 	s16b current_wand;
@@ -3170,7 +3178,7 @@ struct player_type {
 	bool shadow_running;
 
 #ifdef AUTO_RET_CMD
-	int autoret;			/* set auto-retaliation via command instead of inscription */
+	u16b autoret;			/* set auto-retaliation via command instead of inscription */
 #endif
 	bool shoot_till_kill, shooty_till_kill, shooting_till_kill; /* Shoot a target until it's dead, like a ranged 'auto-retaliator' - C. Blue */
 	int shoot_till_kill_book, shoot_till_kill_spell, shoot_till_kill_mimic; //and there's shoot_till_kill_rcraft too
@@ -3379,6 +3387,7 @@ struct player_type {
 #endif
 
 	int item_newest;
+	bool keep_bottle;
 };
 
 typedef struct boni_col boni_col;
@@ -3539,6 +3548,7 @@ struct server_opts {
 	s32b spell_stack_limit;
 	s16b fps;
 	bool players_never_expire;
+	bool admins_never_expire;
 	s16b newbies_cannot_drop;
 	s16b running_speed;
 
@@ -3616,6 +3626,7 @@ struct server_opts {
 	s16b charmode_trading_restrictions; /* how restricted is trading between everlating and non-everlasting players */
 	s16b item_awareness;	/* How easily the player becomes aware of unknown items (id scroll/shop/..)-C. Blue */
 	bool worldd_pubchat, worldd_privchat, worldd_broadcast, worldd_lvlup, worldd_unideath, worldd_pwin, worldd_pdeath, worldd_pjoin, worldd_pleave, worldd_plist, worldd_events;//worldd_ircchat;
+	byte leak_info;
 };
 
 /* Client option struct */
@@ -3803,6 +3814,12 @@ struct client_opts {
 	bool mp_bar;
 	bool st_bar;
 	bool find_ignore_montraps; //130, (page 6)
+
+	bool quiet_os;
+	bool disable_lightning;
+	bool macros_in_stores;
+	bool item_error_beep;
+	bool keep_bottle;
 };
 
 /*
@@ -4054,6 +4071,8 @@ struct hash_entry {
 
 	char houses; // ACC_HOUSE_LIMIT
 	byte winner;
+
+	byte order;			/* custom order in account screen overview */
 
 	struct hash_entry *next;	/* Next entry in the chain */
 };

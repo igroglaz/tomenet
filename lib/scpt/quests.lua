@@ -47,14 +47,14 @@ function quest_towneltalk(Ind, msg, topic)
 					msg_print(Ind, "\252\255UFor a "..msg.." you attack too slowly. Your number of blows per round (BpR) should at least be 2!")
 					msg_print(Ind, "\252\255U You should try getting the lightest weapon possible, to remedy this! For example a dagger, whip, or maybe a spear or cleaver if you specialized in those.")
 					msg_print(Ind, "\252\255U If this doesn't give you at least 2 BpR, you should really increase your strength, or maybe even your dexterity, as these might just be too low.")
-					if player.pclass == CLASS_ROGUE or admin then
+					if player.pclass == CLASS_ROGUE or admin == 1 then
 						msg_print(Ind, "\252\255U As a rogue a third, easy way is to dual-wield two one-handed weapons at once!")
 					end
 					hinted = 1
 				end
 			end
 			--Cursed non-artifact equipment on lowbies:
-			if player.lev < 20 or admin then
+			if player.lev < 20 or admin == 1 then
 				x = 0
 				for i = INVEN_WIELD, INVEN_TOTAL do
 					if band(player.inventory[i].ident, 64) ~= 0 then --ID_CURSED
@@ -71,7 +71,7 @@ function quest_towneltalk(Ind, msg, topic)
 				end
 			end
 			--Stranger-owned Rings of Power in lowbie inven:
-			if player.lev < 25 or admin then
+			if player.lev < 25 or admin == 1 then
 				x = 0
 				for i = 1, INVEN_PACK do
 					if player.inventory[i].tval == 45 and player.inventory[i].sval == 5 and player.inventory[i].owner ~= player.id then --TV_RING,SV_RING_SPECIAL
@@ -92,7 +92,7 @@ function quest_towneltalk(Ind, msg, topic)
 		end
 
 		--Give proper question about advice topics
-		msg_print(Ind, " ")
+		--msg_print(Ind, " ")
 		if hinted == 1 then
 			msg_print(Ind, "\252\255UIs there anything else you need advice on?")
 		else
@@ -107,11 +107,68 @@ function quest_towneltalk(Ind, msg, topic)
 	--*** preparation/inventory ***
 	if topic == 0 then
 		--encumberment too for MA (and Dodging?)
+		if player.monk_heavyarmor == 1 then
+			msg_print(Ind, "\252\255UIt seems your armour weight negatively impacts your martial arts performance, hindering your abilities!");
+			hinted = 1
+		end
+		if player.rogue_heavyarmor == 1 then
+			msg_print(Ind, "\252\255UIt seems your armour weight negatively impacts your flexibility and awareness, hindering your abilities!");
+			if player.inventory[INVEN_WIELD+2].k_idx ~= 0 and player.inventory[INVEN_WIELD+2].tval ~= 34 then -- INVEN_ARM+1, TV_SHIELD
+				msg_print(Ind, "\252\255UBe aware that your secondary weapon will count as NON-EXISTANT while you are encumbered this way! Meaning that you won't get any abilities or resistances from it either!");
+			end
+			hinted = 1
+		end
+		--suggest phase/heals etc?
 	end
 
 	--*** equipment ***
 	if topic == 1 then
-		--resistances, encumberments, redundant flags
+		--resistances
+		if player.lev >= 29 or admin == 1 then
+			if player.free_act == 0 then
+				msg_print(Ind, "\252\255UYou should really make sure you have Free Action, or you might get paralzyed by a monster and become unable to defend yourself or flee!")
+				hinted = 1
+			end
+			if player.resist_nexus == 0 then
+				msg_print(Ind, "\252\255UYou probably want nexus resistance soon, because nexus can swap two of your attributes randomly, which can mean very, very serious trouble.")
+				hinted = 1
+			end
+			if player.resist_pois == 0 then
+				msg_print(Ind, "\252\255UYou should look for poison resistance. I heard that Amulets of the Serpents are relatively easy to acquire for that need.")
+				hinted = 1
+			end
+			if player.resist_fire == 0 or player.resist_cold == 0 or player.resist_acid == 0 or player.resist_elec == 0 then
+				msg_print(Ind, "\252\255UYou definitely want resistance to the four basic elements, fire and cold, acid and lightning!")
+				hinted = 1
+			end
+		elseif player.lev >= 23 or admin == 1 then
+			if player.free_act == 0 then
+				msg_print(Ind, "\252\255UYou might want to look out for Free Action, or you might get paralzyed by a monster and become unable to defend yourself or flee!")
+				hinted = 1
+			end
+			if player.resist_fire == 0 or player.resist_cold == 0 or player.resist_acid == 0 or player.resist_elec == 0 then
+				msg_print(Ind, "\252\255UYou probably want to complete your array of resistances to the four basic elements, fire and cold, acid and lightning.")
+				hinted = 1
+			end
+		elseif player.lev >= 15 or admin == 1 then
+			if player.resist_fire == 0 then
+				msg_print(Ind, "\252\255UYou might want to look for something that provides fire resistance. Quite useful to have early on.")
+				hinted = 1
+			end
+		end
+		--encumberments
+		if player.monk_heavyarmor == 1 then
+			msg_print(Ind, "\252\255UIt seems your armour weight negatively impacts your martial arts performance, hindering your abilities!");
+			hinted = 1
+		end
+		if player.rogue_heavyarmor == 1 then
+			msg_print(Ind, "\252\255UIt seems your armour weight negatively impacts your flexibility and awareness, hindering your abilities!");
+			if player.inventory[INVEN_WIELD+2].k_idx ~= 0 and player.inventory[INVEN_WIELD+2].tval ~= 34 then -- INVEN_ARM+1, TV_SHIELD
+				msg_print(Ind, "\252\255UBe aware that your secondary weapon will count as NON-EXISTANT while you are encumbered this way! Meaning that you won't get any abilities or resistances from it either!");
+			end
+			hinted = 1
+		end
+		--redundant flags
 		--if we dual-wield a wrong weapon type, tell about one-hand mode
 		--maybe add dual-wield cheap hint for warriors/rangers/HK that are naked
 	end
@@ -135,10 +192,14 @@ function quest_towneltalk(Ind, msg, topic)
 
 	--*** dungeon exploration ***
 	if topic == 5 then
+		msg_print(Ind, "\252\255UGo to the town hall, the largest building in Bree! The right side entrance is the mathom house. There you can see a list of all known dungeons and also find out which ones haven't been explored recently, giving you bonus XP!")
+		hinted = 1
 	end
 
 	--*** events ***
 	if topic == 6 then
+		msg_print(Ind, "\252\255UTo check for ongoing events, type '/evinfo' into chat. Events take place regularly every 1 or 2 hours.")
+		hinted = 1
 	end
 
 	if hinted == 0 then

@@ -3228,6 +3228,8 @@ static void set_server_option(char * option, char * value) {
 	}
 	else if (!strcmp(option,"PLAYERS_NEVER_EXPIRE"))
 		cfg.players_never_expire = str_to_boolean(value);
+	else if (!strcmp(option,"ADMINS_NEVER_EXPIRE"))
+		cfg.admins_never_expire = str_to_boolean(value);
 	else if (!strcmp(option,"MAGE_HITPOINT_BONUS"))
 		cfg.mage_hp_bonus = str_to_boolean(value);
 	else if (!strcmp(option,"NEWBIES_CANNOT_DROP"))
@@ -3412,6 +3414,8 @@ static void set_server_option(char * option, char * value) {
 #endif
 	else if (!strcmp(option,"WORLDD_EVENTS"))
 		cfg.worldd_events = str_to_boolean(value);
+	else if (!strcmp(option,"LEAK_INFO"))
+		cfg.leak_info = atoi(value);
 
 	else printf("Error : unrecognized tomenet.cfg option %s\n", option);
 }

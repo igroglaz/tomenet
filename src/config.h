@@ -819,7 +819,7 @@
 /* 
  * OPTION: max # of history for chat, slash-cmd etc.
  */
-#define MSG_HISTORY_MAX	1000
+#define MSG_HISTORY_MAX		2000
 
 #define EVIL_METACLIENT
 

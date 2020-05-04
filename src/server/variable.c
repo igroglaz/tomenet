@@ -175,7 +175,7 @@ server_opts cfg = {
 
 	10,200,		// spell_interfere, spell_stack_limit
 	/* s16b */
-	60,FALSE,3,5,	// fps, players_never_expire, newbies_cannot_drop, running_speed,
+	60,FALSE,TRUE,3,5,	// fps, players_never_expire, admins_never_expire, newbies_cannot_drop, running_speed,
 
 	25, 150,	// anti_scum, dun_unusual,
 	32,32,		// town_x, town_y
@@ -222,6 +222,7 @@ server_opts cfg = {
 	0,		/* item_awareness - how easily the player becomes aware of sofar un-identified items
 					    0 = normal, 1 = seeing in standard town shop (1 to 6), 2 = seeing in any shop while carrying it, 3 = seeing in any shop */
 	TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,	/* types of messages which will be transmitted through the world server (if available). */
+	0,		/* leak_info */
 };
 
 struct combo_ban *banlist = NULL;
@@ -817,16 +818,16 @@ int gametype;
 /* Private notes for fellow players
  * see '/note' command in util.c. -C. Blue
  */
-char priv_note[MAX_NOTES][MAX_CHARS_WIDE], priv_note_sender[MAX_NOTES][NAME_LEN], priv_note_target[MAX_NOTES][NAME_LEN];
-char party_note[MAX_PARTYNOTES][MAX_CHARS_WIDE], party_note_target[MAX_PARTYNOTES][NAME_LEN];
-char guild_note[MAX_GUILDNOTES][MAX_CHARS_WIDE], guild_note_target[MAX_GUILDNOTES][NAME_LEN];
+char priv_note[MAX_NOTES][MAX_CHARS_WIDE], priv_note_sender[MAX_NOTES][NAME_LEN], priv_note_target[MAX_NOTES][NAME_LEN], priv_note_u[MAX_NOTES][MAX_CHARS_WIDE];
+char party_note[MAX_PARTYNOTES][MAX_CHARS_WIDE], party_note_target[MAX_PARTYNOTES][NAME_LEN], party_note_u[MAX_PARTYNOTES][MAX_CHARS_WIDE];
+char guild_note[MAX_GUILDNOTES][MAX_CHARS_WIDE], guild_note_target[MAX_GUILDNOTES][NAME_LEN], guild_note_u[MAX_GUILDNOTES][MAX_CHARS_WIDE];
 char admin_note[MAX_ADMINNOTES][MAX_CHARS], server_warning[MSG_LEN];
 
 /* in-game bbs :) - C. Blue */
-char bbs_line[BBS_LINES][MAX_CHARS_WIDE];
+char bbs_line[BBS_LINES][MAX_CHARS_WIDE], bbs_line_u[BBS_LINES][MAX_CHARS_WIDE];
 /* party/guild-internal bbs'es: */
-char pbbs_line[MAX_PARTIES][BBS_LINES][MAX_CHARS_WIDE];
-char gbbs_line[MAX_GUILDS][BBS_LINES][MAX_CHARS_WIDE];
+char pbbs_line[MAX_PARTIES][BBS_LINES][MAX_CHARS_WIDE], pbbs_line_u[MAX_PARTIES][BBS_LINES][MAX_CHARS_WIDE];
+char gbbs_line[MAX_GUILDS][BBS_LINES][MAX_CHARS_WIDE], gbbs_line_u[MAX_GUILDS][BBS_LINES][MAX_CHARS_WIDE];
 
 int global_luck = 0;
 int regen_boost_stamina = 4;
@@ -859,6 +860,8 @@ int __lua_HBLESSING;
 int __lua_MSCARE;
 int __lua_M_FIRST;
 int __lua_M_LAST;
+int __lua_P_FIRST;
+int __lua_P_LAST;
 #ifndef ENABLE_OCCULT
 int __lua_OFEAR = 0;
 #else
@@ -1028,7 +1031,7 @@ int nrc_x, nrc_y, netherrealm_end_wz;
 
 bool sauron_weakened = FALSE, sauron_weakened_iddc = FALSE;
 int __audio_sfx_max, __audio_mus_max;
-int __sfx_am = -1;
+int __sfx_am = -1, __sfx_bell = -1, __sfx_page = -1, __sfx_warning = -1;
 
 /* character names temporarily reserved for specific accounts */
 char reserved_name_character[MAX_RESERVED_NAMES][NAME_LEN];

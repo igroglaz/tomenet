@@ -166,10 +166,12 @@ pern_dofile(Ind, "s_nature.lua")
 pern_dofile(Ind, "s_mind.lua")
 pern_dofile(Ind, "s_udun.lua")
 
+__lua_P_FIRST = __tmp_spells_num
 pern_dofile(Ind, "p_offense.lua")
 pern_dofile(Ind, "p_defense.lua")
 pern_dofile(Ind, "p_curing.lua")
 pern_dofile(Ind, "p_support.lua")
+__lua_P_LAST = __tmp_spells_num - 1
 
 pern_dofile(Ind, "dr_arcane.lua")
 pern_dofile(Ind, "dr_physical.lua")
@@ -258,12 +260,12 @@ school_book[18] = { POWERBOLT_III, POWERBEAM_III, POWERBALL_III, RELOCATION, VEN
 
 if (def_hack("TEST_SERVER", nil)) then
 	school_book[19] = {MBASH, MDISARM, MBLINK, MTELEPORT, MTELETOWARDS, MFEEDBACK, MPYROKINESIS_II, MCRYOKINESIS_II, MTELEAWAY, MTELEKINESIS, MSHIELD, MFUSION,}
-	school_book[20] = {MCURE, MBOOST, MSELFKNOW, MHASTE, MIDENTIFY, MSENSEMON, MSANITY, MTELEKINESIS, MFUSION,}
+	school_book[20] = {MCURE, MBOOST, MSELFKNOW, MIDENTIFY, MHASTE, MSENSEMON, MSANITY, MTELEKINESIS, MFUSION,}
 else
 	-- Create the book of mindcrafting: Psycho-power (-)
 	school_book[19] = { MBASH, MDISARM, MBLINK, MTELEPORT, MTELETOWARDS, MFEEDBACK, MPYROKINESIS_II, MCRYOKINESIS_II, MTELEAWAY, MTELEKINESIS, MSHIELD, }
 	-- Create the book of mindcrafting: Thought contact (aka Attunement)
-	school_book[20] = { MCURE, MBOOST, MSELFKNOW, MHASTE, MIDENTIFY, MSENSEMON, MSANITY, MTELEKINESIS, }
+	school_book[20] = { MCURE, MBOOST, MSELFKNOW, MIDENTIFY, MHASTE, MSENSEMON, MSANITY, MTELEKINESIS, }
 end
 -- Create the book of mindcrafting: Mental intrusion (-)
 school_book[21] = { MSCARE_II, MCONFUSE_II, MSLEEP_II, MSLOWMONSTER_II, MPSISTORM_II, MMINDBLAST_III, MSILENCE, MIDENTIFY, MMAP, MCHARM, MSTOPCHARM, }
@@ -344,9 +346,9 @@ school_book[58] = { TELEKINESIS, DIG, STONEPRISON, GROWTREE, DISARM, VISION_II, 
 -- Create the handbook of revelation
 if (def_hack("TEMP2", nil)) then
 	--include Occult spells
-	school_book[59] = { MEDITATION, IDENTIFY_III, STARIDENTIFY, SENSEHIDDEN_II, DETECTMONSTERS, SENSEMONSTERS, MSELFKNOW, MSANITY, HDETECTEVIL, MSENSEMON, MIDENTIFY, DETECTCREATURES }
+	school_book[59] = { MEDITATION, IDENTIFY_III, STARIDENTIFY, SENSEHIDDEN_II, DETECTMONSTERS, SENSEMONSTERS, MSELFKNOW, MSANITY, HDETECTEVIL, MIDENTIFY, MSENSEMON, DETECTCREATURES }
 else
-	school_book[59] = { IDENTIFY_III, STARIDENTIFY, SENSEHIDDEN_II, DETECTMONSTERS, SENSEMONSTERS, MSELFKNOW, MSANITY, HDETECTEVIL, MSENSEMON, MIDENTIFY }
+	school_book[59] = { IDENTIFY_III, STARIDENTIFY, SENSEHIDDEN_II, DETECTMONSTERS, SENSEMONSTERS, MSELFKNOW, MSANITY, HDETECTEVIL, MIDENTIFY, MSENSEMON }
 end
 -- Create the handbook of transportation
 if (def_hack("TEMP2", nil)) then
@@ -366,3 +368,6 @@ if (def_hack("TEMP2", nil)) then
 else
 	school_book[61] = { HDELFEAR, HCURSE_I, MANATHRUST_I, GLOBELIGHT_I, DETECTMONSTERS, HDETECTEVIL, HSANCTUARY_I, SENSEHIDDEN_I }
 end
+
+-- Create the handbook of alleviation
+school_book[62] = { ODELFEAR, HERBALTEA, MEDITATION, DISPELMAGIC, HCUREWOUNDS_II, HCURING_III, HSANITY, MSANITY, HRELSOULS_III }

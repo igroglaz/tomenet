@@ -93,7 +93,7 @@
 /* For savefile purpose only */
 #define SF_VERSION_MAJOR	4
 #define SF_VERSION_MINOR	7
-#define SF_VERSION_PATCH	7
+#define SF_VERSION_PATCH	10
 #define SF_VERSION_EXTRA	0 /* <- not used in version checks! */
 
 /* For quests savefile purpose only */
@@ -985,6 +985,10 @@
    of the Ironman Deep Dive Challenge? */
 #define IDDC_HISCORE_SHOWS_ICON
 
+/* IDDC special buff: Regain a random drained attribute on levelup. */
+#define IDDC_LEVELUP_RESTORES_STAT
+
+
 /* Maximum amount of gold that can be farmed from townies before you get 1 XP
    from it. This is an anti-cheeze for Highlander Tournament and Ironman Deep
    Dive Challenge. (-1 = no limit) [300] */
@@ -1211,6 +1215,10 @@
 #define PROBTRAVEL_AVOIDS_OTHERS
 
 #define CONDENSED_HP_SP		/* reduce HP and SP to 1 line each, instead of 1 line for max and 1 line for cur values? */
+
+/* Chance for a door that is bashed open to break. */
+#define DOOR_BASH_BREAKAGE	80
+
 
 /* ----------------------------------------------------------------------- (End of 'features')  ----------------------------------------------------------------------- */
 
@@ -1519,8 +1527,7 @@
 #define SF1_SPECIAL		0x08000000L	/* Store doesn't have an inventory but prints arbitrary text to screen instead */
 #define SF1_BUY67		0x10000000L	/* Shop buys for 67% of value */
 #define SF1_NO_DISCOUNT1	0x20000000L	/* no 20+% discounts */
-//flag hole:
-#define SF1_XXXXXXXXXXXX	0x40000000L	/*  */
+#define SF1_SELL67		0x40000000L	/* Store sells for 67% of value */
 #define SF1_ZEROLEVEL		0x80000000L	/* all items are level 0 and can't be traded */
 
 /* This seems to be bad, but backported once anyway;
@@ -1610,7 +1617,7 @@
 #define MON_MULT_ADJ	8		/* High value slows multiplication */
 #define MON_SUMMON_ADJ	2		/* Adjust level of summoned creatures */
 #define MON_DRAIN_LIFE	2		/* Percent of player exp drained per hit */
-#define USE_DEVICE	3		/* x> Harder devices x< Easier devices */
+#define USE_DEVICE	3		/* Value for calculating magic device activation chances, also modifier for EASY_USE and easier use of devices in general. */
 /* Enable to prevent cursed diggers/tools to be created. - C. Blue
    Note: For tools that do not have (+hit) or (+dam) values, this might
    slightly increase amount of tools generated in stores since they will
@@ -1736,7 +1743,7 @@
 #define PY_MAX_LEVEL		100	/* Maximum level allowed technically */
 
 /*
- * Player "food" crucial values
+ * Player "food" crucial values (20000 is upper limit in set_food())
  */
 #define PY_FOOD_MAX	15000	/* Food value (Bloated) */
 #define PY_FOOD_FULL	10000	/* Food value (Normal) */
@@ -2199,9 +2206,10 @@
 
 /* New features, filling up the gaps in f_info */
 #define FEAT_FOUNTAIN_BLOOD	0x1B	/* for Vampires */
-
 /* Like house wall, but for upper storeys, not illuminated by lamp light therefore */
 #define FEAT_WALL_HOUSEUPPER	0x1C
+
+#define FEAT_FAKE_WALL		0x1D
 
 /* Doors */
 #define FEAT_DOOR_HEAD		0x20
@@ -2987,6 +2995,8 @@
 #ifdef ENABLE_EXCAVATION
  #define TV_CHARGE	47	/* Demolition charges for 'Excavation' skill */
  #define TV_CHEMICAL	48	/* Ingredients for crafting demolition charges for 'Excavation' skill */
+#else
+ #define TV_CHEMICAL	48	/* Just for building the client anyway */
 #endif
 #define TV_TOTEM	54      /* Summoner totems */
 #define TV_STAFF	55
@@ -3262,6 +3272,9 @@
 #define SV_TOOL_TARPAULIN		5
 #define SV_TOOL_FLINT			6
 #define SV_TOOL_WRAPPING		7
+#ifdef ENABLE_EXCAVATION
+ #define SV_TOOL_GRINDER		8
+#endif
 
 /* The "sval" codes for TV_MSTAFF */
 #define SV_MSTAFF 			1
@@ -3984,6 +3997,9 @@
 /* note: there is only 1 flask, ie flask of oil.
    this might be assumed in lots of places in the code.*/
 #define SV_FLASK_OIL			0
+#ifdef ENABLE_EXCAVATION
+ #define SV_FLASK_ACID			1
+#endif
 
 /* The "sval" codes for TV_FOOD */
 #define SV_FOOD_POISON			0
@@ -4140,31 +4156,38 @@
    that can also be applied to ranged ammunition or traps for various effects  - C. Blue */
 #ifdef ENABLE_EXCAVATION
 /* Notes about ingredients regarding the crafting process (anyone read the Dr Stone manga?) -
-   charcoal: burn trees :D, saltpeter (bird guano, others), sulfur (volcanic and undersea, mining!, red d/D),
+   charcoal: burn trees :D, saltpeter (bird guano, dung / chile saltpetre from arid regions esp desert! sandwalls!), sulfur (volcanic and undersea, mining!, red d/D),
    ammonia (alternative to metal-saltpeter): heat animal dung (camels^^') - maybe even extract from poison/gas breath? oO far stretch yeah,
     maybe just make it already 'ammonia salt' straight away aka Gwihabaite (ammonia-saltpeter, ready for use as saltpeter alternative),
-    we can consider it to be more porous and combinable with lamp oil, just those two are fit for industrial mining operations already!:
-    less potent and not waterproof but easier to use/cheaper,
+    we can consider it to be more porous and combinable with lamp oil, just those two are fit for industrial mining operations already! (94%-6% ANFO style):
+     less potent and not waterproof but easier to use/cheaper,
    metal powder: specifically aluminium, but maybe too rare,
-   (metal)hydroxides(*): salt water + rust(!) (not exactly, and unfeasible metal types, but w/e),
-   metalperoxide: metaloxides (or ammonia) + hydroxides(*) (soooorta...again, so it'll just be MORE saltwater with rust, lul),
-   perchlorates: acid (let's just assume it's hydrochloric acid by chance -_-) + aluminium (we dont have magnesium..) or kalium (from saltpeter maybe?)
+   (metal)hydroxides(*): salt water + rust(!) (not exactly, and unfeasible metal types, but w/e) -> 'caustic metal ash',
+   metalperoxide: metaloxides (or ammonia) + hydroxides(*) (soooorta...again, so it'll just be MORE saltwater with rust, lul) -> 'potent caustic metal ash' (not feasible in medieval context),
+   perchlorates: acid (let's just assume it's hydrochloric acid by chance -_-) + aluminium (we dont have magnesium..) or kalium (from saltpeter maybe?) -> 'caustic salt' (not feasible in medieval context)
+   ^ acid: sulfur+saltpeter with steam and heat, so +water+lampoil =p, or:
+   ^ vitriol (works as acid replacement - when creating perchlorate too? as metal is not a liquid? ah w/e just allow..): mining (volcanic)/dragons.
+   ..rust: metal powder + (salt) water. Or use some kind of 'grinding tool' on rusty armour or on normal metal items to obtain (not 'reactive' though) metal powder first.
     */
+/* Optionally enable simplifications of ingredients and formulas: */
+#define NO_RUST_NO_HYDROXIDE		/* Note: Rusty items can still be ground and will just turn into normal metal powder instead, assuming the item was only partially rusted ^^. */
+#define NO_OIL_ACID			/* We don't need lamp oil to create acid, as heating is implied by our fire-type light souce (which is needed though!) */
 /* TV_CHARGE svals */
- #define SV_CHARGE_BLAST		1
+ #define SV_CHARGE_BLAST		1	/* Charges can be thrown for immediate detonation or activated to detonate after a few seconds or put into trap kits? */
  #define SV_CHARGE_XBLAST		2
- #define SV_CHARGE_QUAKE		3
- #define SV_CHARGE_DESTRUCTION		4
- #define SV_CHARGE_FIRE			5
- #define SV_CHARGE_FIRESTORM		6
- #define SV_CHARGE_FIREWALL		7
- #define SV_CHARGE_WRECKING		8	/* create rubble */
- #define SV_CHARGE_CASCADING		9	/* wall creation */
- #define SV_CHARGE_TACTICAL		10	/* stone prison */
- #define SV_CHARGE_FLASHBOMB		11	/* blind effect */
- #define SV_CHARGE_CONCUSSION		12	/* extra stun effect */
- #define SV_CHARGE_XCONCUSSION		13	/* extra STUN effect */
- #define SV_CHARGE_UNDERGROUND		14	/* create water/lava (blast open a hidden underground vein) */
+ #define SV_CHARGE_SBLAST		3	/* Surgically creates a line of floor (anti-wallcreation) */
+ #define SV_CHARGE_QUAKE		4
+ #define SV_CHARGE_DESTRUCTION		5
+ #define SV_CHARGE_FIRE			6
+ #define SV_CHARGE_FIRESTORM		7
+ #define SV_CHARGE_FIREWALL		8	/* inscribe N/NE/E/SE/S/SW/W/NW for direction? */
+ #define SV_CHARGE_WRECKING		9	/* create rubble */
+ #define SV_CHARGE_CASCADING		10	/* wall creation; inscribe for dir? */
+ #define SV_CHARGE_TACTICAL		11	/* stone prison */
+ #define SV_CHARGE_FLASHBOMB		12	/* blind effect */
+ #define SV_CHARGE_CONCUSSION		13	/* extra stun effect */
+ #define SV_CHARGE_XCONCUSSION		14	/* extra STUN effect */
+ #define SV_CHARGE_UNDERGROUND		15	/* create water/lava (blast open a hidden underground vein) */
 /* TV_CHEMICAL svals */
  #define SV_CHARCOAL		1	/* small amount, your basic fuel ingredient to burn shits (>' ')> */
  #define SV_SULFUR		2	/* small amount, easens combustion */
@@ -4174,6 +4197,40 @@
  #define SV_METAL_HYDROXIDE	6	/* additional tier I oxygen source - make shit more potent */
  #define SV_METAL_PEROXIDE	7	/* additional tier II oxygen source - make shit MORE potent */
  #define SV_METAL_PERCHLORATE	8	/* additional tier III oxygen source - make shit *MORE* potent */
+ #define SV_VITRIOL		9	/* (sulphates) alternative for flask of acid */
+ #define SV_RUST		10	/* metaloxide.. we limit it to iron I guess.. */
+ #define SV_WOOD_CHIPS		11
+ #define SV_MIXTURE		99	/* Mixture of the above ingredients. Uses xtra1/2/3 to bitwise store the ingredients that went into it so far, the 3 variables indicating the amounts of each bit, eg 2xsalpeter+1x... */
+/* Helper indices for ingredients -- IMPORTANT: For ingredients in TV_CHEMICAL these must match the sval up to 10! */
+ #define CI_CC	1
+ #define CI_SU	2
+ #define CI_SP	3
+ #define CI_AS	4
+ #define CI_MP	5
+ #define CI_MH	6
+ #define CI_ME	7
+ #define CI_MC	8
+ #define CI_VI	9
+ #define CI_RU	10
+ #define CI_LO	11
+ #define CI_WA	12
+ #define CI_SW	13
+ #define CI_AC	14
+/* Helper flags for the ingredient svals -- IMPORTANT: the CI_ values must match the flag leftshift to get the CF_! Eg: ammonia = 1 << (CI_AS - 1) = CF_AS */
+ #define CF_CC		0x0001
+ #define CF_SU		0x0002
+ #define CF_SP		0x0004
+ #define CF_AS		0x0008
+ #define CF_MP		0x0010
+ #define CF_MH		0x0020
+ #define CF_ME		0x0040
+ #define CF_MC		0x0080
+ #define CF_VI		0x0100
+ #define CF_RU		0x0200
+ #define CF_LO		0x0400
+ #define CF_WA		0x0800
+ #define CF_SW		0x1000
+ #define CF_AC		0x2000
 #endif
 
 /* svals for TV_SPECIAL */
@@ -4217,6 +4274,9 @@
 #define CAVE_GLOW_HACK	0x00200000	/* bad hack for hard-coded questor lights for now // self-illuminating */
 #define CAVE_GLOW_HACK_LAMP	0x00400000 	/* bad hack for hard-coded questor lights for now // self-illuminating, in fire-flickering style (TERM_LAMP) */
 #define CAVE_ENCASED	0x00800000	/* For digging (FEAT_QUARTZ/MAGMA_x): Treasure veins that are pretty remotely encased in rock, requiring more effort than hallway/room-adjacent ez veins. */
+
+#define CAVE_NOYIELD	0x01000000	/* Will not yield any items or treasure when tunneled */
+#define CAVE_DECAL	0x02000000	/* Impossible to interact with anything on this grid or the grid itself except for looking at it */
 
 /* Hack for p_ptr->cave_flag, which is only 1 byte in size: */
 #define CAVE_AOVL	CAVE_TEMP	/* Mark grid if it displays an overlay visual that could get auto-updated, ie monsters: A monster can move away automatically, rendering the overlay out of date. */
@@ -4511,7 +4571,7 @@
 #define GF_BOLT			8
 #define GF_BOULDER		9
 #define GF_MISSILE		10
-
+#define GF_ACID_BLIND		11	/* fine dispersed acid (from throwing a flask): additional blind effect, but too weak to affect feat/obj. */
 #define GF_PLASMA		12
 #define GF_HOLY_ORB		13
 #define GF_WATER		14
@@ -4873,17 +4933,17 @@
 				TR1_SLAY_TROLL | TR1_SLAY_GIANT | TR1_SLAY_DRAGON | \
 				TR1_KILL_DRAGON | TR1_KILL_DEMON | TR1_KILL_UNDEAD)
 
+#define TR1_ATTR_MASK (TR1_STR | TR1_INT | TR1_WIS | TR1_DEX | TR1_CON | TR1_CHR)
+
 /* Hack -- flag set 1 -- mask for "pval-dependant" flags. */
 #if 0
 #define TR1_PVAL_MASK	\
-	(TR1_STR | TR1_INT | TR1_WIS | TR1_DEX | \
-	TR1_CON | TR1_CHR | TR1_MANA | TR1_SPELL_SPEED | \
+	(TR1_ATTR_MASK | TR1_MANA | TR1_SPELL_SPEED | \
 	TR1_STEALTH | TR1_SEARCH | TR1_INFRA | TR1_TUNNEL | \
 	TR1_SPEED | TR1_BLOWS | TR1_LIFE | TR1_XXX4)
 #else
 #define TR1_PVAL_MASK   \
-	(TR1_STR | TR1_INT | TR1_WIS | TR1_DEX | \
-	TR1_CON | TR1_CHR | TR1_LIFE | \
+	(TR1_ATTR_MASK | TR1_LIFE | \
 	TR1_STEALTH | TR1_SEARCH | TR1_INFRA | TR1_TUNNEL | \
 	TR1_SPEED | TR1_BLOWS | TR1_MANA | TR1_SPELL)
 #endif	/* 0 */
@@ -5219,7 +5279,7 @@
  #define RESF_COND_FORCE	0x00000800	/* force item drop of desired type according to conditions */
  #define RESF_COND_LSWORD	0x00001000	/* force a sword (swordmen, rogues) */
  #define RESF_BOOST_PVAL	0x00002000	/* for create_reward(): Boost lowish pvals for certain items to make them guaranteedly quite useful */
- //HOLE				0x00004000
+ #define RESF_CONDF_NOMSTAFF	0x00004000	/* don't allow mage staves (persistent; for Saruman, when he chosen-drops a guaranteed one, this avoids duplicates) -- */
 #endif
 #define RESF_EGOHI		0x00008000	/* e_info value of 9000.. */
 
@@ -5464,7 +5524,7 @@
 #define RF1_DROP_4D2			0x08000000	/* Drop 4d2 items/gold */
 #define RF1_DROP_GOOD		0x10000000	/* Drop good items */
 #define RF1_DROP_GREAT		0x20000000	/* Drop great items */
-#define RF1_DROP_USEFUL		0x40000000	/* Drop "useful" items */
+#define RF1_DROP_USEFUL		0x40000000	/* Drop "useful" items -- not implemented, unused (Dolphiner only) */
 #define RF1_DROP_CHOSEN		0x80000000	/* Drop "chosen" items */
 
 /*
@@ -6448,6 +6508,9 @@
 #define LF2_COLLAPSING		0x00400000L	/* audiovisual show when Zu-Aon is defeated ;) - C. Blue */
 #define LF2_NO_SUMMON		0x00800000L	/* disallow any summoning (to go with NO_TELE :) for new experimental dungeoneering) */
 
+#define LF2_NO_LIVE_SPAWN	0x01000000L	/* disallow any live-spawn of monsters (like in IDDC, could be used for that actually) */
+#define LF2_NO_SPAWN		0x02000000L	/* disallow any monster spawn, even at level generation time. Monsters must be placed manually, hard-codedly, if desired. */
+
 
 /* vault flags for v_info */
 #define VF1_FORCE_FLAGS		0x00000001L
@@ -7006,6 +7069,8 @@
     ((R)->flags2 & RF2_PASS_WALL) || ((R)->flags2 & RF2_KILL_WALL) || \
     /* POWERFUL monsters can hack down trees */ \
     ((R)->flags2 & RF2_POWERFUL))) || \
+    /* Spiders can of course pass webs.. */ \
+    ((f_info[(C)->feat].flags1 & FF1_WEB) && ((R)->flags7 & RF7_SPIDER)) || \
     /* Some monsters live in the mountains natively - Should be moved to monster_can_cross_terrain (C. Blue) */ \
     (((C)->feat == FEAT_MOUNTAIN) && \
     (((R)->flags8 & RF8_WILD_MOUNTAIN) || ((R)->flags8 & RF8_WILD_VOLCANO) || ((R)->flags0 & RF0_CAN_CLIMB))))
@@ -7032,6 +7097,8 @@
 ((R)->flags2 & RF2_PASS_WALL) || ((R)->flags2 & RF2_KILL_WALL) || \
 /* POWERFUL monsters can hack down trees */ \
 ((R)->flags2 & RF2_POWERFUL))) || \
+/* Spiders can of course pass webs.. */ \
+((f_info[(C)->feat].flags1 & FF1_WEB) && ((R)->flags7 & RF7_SPIDER)) || \
 /* Some monsters live in the mountains natively - Should be moved to monster_can_cross_terrain (C. Blue) */ \
 (((C)->feat == FEAT_MOUNTAIN) && \
 (((R)->flags8 & RF8_WILD_MOUNTAIN) || ((R)->flags8 & RF8_WILD_VOLCANO) || ((R)->flags0 & RF0_CAN_CLIMB))) || \
@@ -7058,6 +7125,8 @@
 ((R)->flags2 & RF2_PASS_WALL) || ((R)->flags2 & RF2_KILL_WALL) || \
 /* POWERFUL monsters can hack down trees */ \
 ((R)->flags2 & RF2_POWERFUL))) || \
+/* Spiders can of course pass webs.. */ \
+((f_info[(C)->feat].flags1 & FF1_WEB) && ((R)->flags7 & RF7_SPIDER)) || \
 /* Some monsters live in the mountains natively - Should be moved to monster_can_cross_terrain (C. Blue) */ \
 (((C)->feat == FEAT_MOUNTAIN) && \
 (((R)->flags8 & RF8_WILD_MOUNTAIN) || ((R)->flags8 & RF8_WILD_VOLCANO) || ((R)->flags0 & RF0_CAN_CLIMB))) || \
@@ -7176,6 +7245,12 @@ extern int PlayerUID;
  #define TERM_STARLITE	57
  #define TERM_HAVOC	58
 
+ #define TERM_SELECTOR	59
+
+ #ifdef EXTENDED_BG_COLOURS
+  #define TERM2_BLUE	63
+ #endif
+
  #ifdef EXTENDED_COLOURS_PALANIM
   #define TERMA_OFFSET	64
   /* Clones of the 16 default colours, aka 'really used' colours (non-compounds), for palette animation. */
@@ -7197,29 +7272,36 @@ extern int PlayerUID;
   #define TERMA_L_UMBER	79
 
   /* Problem: Not enough colours! So we need to change these masks to actual colours. */
-  #define TERM_BNW	248	/* black & white, for admin wizards and pandas */
-  #define TERM_BNWM	249	/* black & white + holyfire, for martyr */
-  #define TERM_BNWSR	250	/* black & white + blue, for shadow running */
-  #define TERM_BNWKS	251	/* black & white + psi, for kinetic shield */
-  #define TERM_BNWKS2	252	/* black & white + orange, for kinetic shield running out */
-  #define TERM_PVPBB	253	/* black/slate/yellow, for bloodbond */
-  #define TERM_PVP	254	/* black/yellow/red, for active PvP-hostility (or stormbringer) */
-  /* Note: 0xFF (255) is reserved for RLE, see Send_line_info(). */
-  /* For compatibility with old clients: */
+  #define TERM_BNW	120	/* black & white, for admin wizards and pandas */
+  #define TERM_BNWM	121	/* black & white + holyfire, for martyr */
+  #define TERM_BNWSR	122	/* black & white + blue, for shadow running */
+  #define TERM_BNWKS	123	/* black & white + psi, for kinetic shield */
+  #define TERM_BNWKS2	124	/* black & white + orange, for kinetic shield running out */
+  #define TERM_PVPBB	125	/* black/slate/yellow, for bloodbond */
+  #define TERM_PVP	126	/* black/yellow/red, for active PvP-hostility (or stormbringer) */
+  #define TERM_RESERVED	127	/* since 0xFF is reserved for RLE and 0x80 is for hilite_player, we need to reserve this colour too, so it won't get combined with 0x80 ever. */
+  /* For comeback of hilite_player in 4.7.3: */
+  #define TERM_HILITE_PLAYER	0x80	/* 128 */
+  /* ..for compatibility with old clients: */
   #define TERM_OLD2_BNW	0x40	/* 64: black & white MASK, for admin wizards */
   #define TERM_OLD2_PVP	0x80	/* 128: black & red MASK, for active PvP-hostility (or stormbringer) */
+  /* ..for more backward compatibility: */
+  #define TERM_OLD3_BNW		248	/* black & white, for admin wizards and pandas */
+  #define TERM_OLD3_BNWM	249	/* black & white + holyfire, for martyr */
+  #define TERM_OLD3_BNWSR	250	/* black & white + blue, for shadow running */
+  #define TERM_OLD3_BNWKS	251	/* black & white + psi, for kinetic shield */
+  #define TERM_OLD3_BNWKS2	252	/* black & white + orange, for kinetic shield running out */
+  #define TERM_OLD3_PVPBB	253	/* black/slate/yellow, for bloodbond */
+  #define TERM_OLD3_PVP		254	/* black/yellow/red, for active PvP-hostility (or stormbringer) */
+  /* Note: 0xFF (255) is reserved for RLE, see Send_line_info(). */
+  #define TERM_RESERVED_RLE	255
  #else
   #define TERM_BNW	0x40	/* 64: black & white MASK, for admin wizards */
   #define TERM_PVP	0x80	/* 128: black & red MASK, for active PvP-hostility (or stormbringer) */
  #endif
-
- #ifdef EXTENDED_BG_COLOURS
-  #define TERM2_BLUE	63
- #endif
 #else
  #define TERM_BNW	0x20	/* 32: black & white MASK, for admin wizards */
  #define TERM_PVP	0x40	/* 64: black & red MASK, for active PvP-hostility (or stormbringer) */
-
  /* Reserved attr values - do not exceed */
  #define TERM_RESERVED	0x80	/* 128 */
 #endif
@@ -8323,6 +8405,7 @@ extern int PlayerUID;
 #define AT_VALINOR4	6
 #define AT_VALINOR5	7
 #define AT_VALINOR6	8
+#define AT_PARTY	9
 
 
 /* Admin-specific item powers - C. Blue */
@@ -8877,8 +8960,9 @@ extern int PlayerUID;
 #define ITH_CUSTOM_TOME	4
 #define ITH_RUNE	5
 #define ITH_ENCH_AC_NO_SHIELD 6
-#define ITH_ID 7
-#define ITH_STARID 8
+#define ITH_ID		7
+#define ITH_STARID	8
+#define ITH_CHEMICAL	9	/* for ENABLE_EXCAVATION */
 /* keen hack: 4.6.0+ clients use ITH_ codes >= 50 and in turn signed char overflow < 0
    for transmitting max_weight for picking items for telekinesis. - C. Blue */
 #define ITH_MAX_WEIGHT	50
@@ -8940,3 +9024,10 @@ extern int PlayerUID;
 /* Chance for weapons / digging tools / p_ptr->impact to cause an earthquake, even if all case-specific rolls already succeeded.
    Unified value for digging and fighting here, as characters could use their weapons as digging tools just as well. */
 #define QUAKE_CHANCE	50
+
+/* More readable than !is_older_than (in common/common.c) */
+#define is_atleast(vtptr, ma, mi, pa, ex, br, bu) (!is_older_than(vtptr, ma, mi, pa, ex, br, bu))
+
+/* Monster special 'status' */
+#define M_STATUS_NONE		0
+#define M_STATUS_FRIENDLY	1

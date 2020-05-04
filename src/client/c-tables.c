@@ -305,7 +305,7 @@ option_type option_info[OPT_MAX] = { // there is room for 22 options per page on
 	{ &c_cfg.flash_player,		TRUE,	6,	1, 44, TRUE,
 	    "flash_player",		"Flash own character icon after far relocation" },
     //todo: fix/implement good cursor on *nix/osx
-	{ &c_cfg.hilite_player,		FALSE,	6,	1, 45, FALSE,
+	{ &c_cfg.hilite_player,		FALSE,	6,	1, 45, TRUE,
 	    "hilite_player",		"Hilite own character icon with the cursor" },
 	{ &c_cfg.consistent_players,	FALSE,	6,	1, 46, TRUE,
 	    "consistent_players",	"Use consistent symbols and colours for players" },
@@ -316,7 +316,6 @@ option_type option_info[OPT_MAX] = { // there is room for 22 options per page on
 	    "no_verify_sell",		"Skip safety question when selling items" },
 	{ &c_cfg.no_verify_destroy,	FALSE,	6,	0, 49, TRUE,
 	    "no_verify_destroy",	"Skip safety question when destroying items" },
-	//HOLE:13
 
     //page 4 - 49
 	{ &c_cfg.auto_afk,		TRUE,	2,	1, 50, TRUE,
@@ -362,7 +361,6 @@ option_type option_info[OPT_MAX] = { // there is room for 22 options per page on
 	    "thin_down_flush",		"Thin down screen flush signals to avoid freezing" },
 	{ &c_cfg.disable_flush,		FALSE,	2,	9, 70, TRUE,
 	    "disable_flush",		"Disable delays from flush signals" },
-	//HOLE:1
 
     //page 5 - 70
     /*** Disturbance ***/
@@ -401,7 +399,6 @@ option_type option_info[OPT_MAX] = { // there is room for 22 options per page on
 	    "easy_disarm",		"Automatically disarm traps (except under items)" },
 	{ &c_cfg.easy_tunnel,		FALSE,	3,	9, 87, TRUE,
 	    "easy_tunnel",		"Automatically tunnel walls" },
-	//HOLE: 4
 
     //page 6 - 87
 	{ &c_cfg.audio_paging,		TRUE,	5,	0, 88, TRUE,
@@ -422,7 +419,7 @@ option_type option_info[OPT_MAX] = { // there is room for 22 options per page on
 	    "no_defense_sfx",		"Don't play attack-avoiding/neutralizing sound fx" },
 	{ &c_cfg.half_sfx_attack,	FALSE,	5,	0, 96, TRUE,
 	    "half_sfx_attack",		"Skip every second attack sound" },
-	{ &c_cfg.cut_sfx_attack,	FALSE,	5,	0, 97, TRUE,
+	{ &c_cfg.cut_sfx_attack,	TRUE,	5,	0, 97, TRUE,
 	    "cut_sfx_attack",		"Skip attack sounds based on speed and bpr" },
 	{ &c_cfg.ovl_sfx_command,	TRUE,	5,	0, 98, TRUE,
 	    "ovl_sfx_command",		"Allow overlapping command sounds of same type" },
@@ -446,7 +443,6 @@ option_type option_info[OPT_MAX] = { // there is room for 22 options per page on
 	    "no_house_sfx",		"Don't play ambient/weather sound in buildings" },
 	{ &c_cfg.no_am_sfx,		FALSE,	5,	1, 108, FALSE,
 	    "no_am_sfx",		"Don't play anti-magic disruption sound effect" },
-	//HOLE: 1
 
     /* unmutable options, pfft -- these are never shown in any options menu (-> FALSE) */
 	{ &c_cfg.use_color,		TRUE,	1,	0, 109, FALSE,//works, but pretty useless - disabled to make room (we always use colours nowadays)
@@ -536,10 +532,22 @@ option_type option_info[OPT_MAX] = { // there is room for 22 options per page on
 
 	{ &c_cfg.find_ignore_montraps,	TRUE,	3,	0, 130, TRUE,
 	    "find_ignore_montraps",	"Run through monster traps" },
+	//HOLE: 3
+
+	{ &c_cfg.quiet_os,		FALSE,	5,	1, 131, TRUE,
+	    "quiet_os",			"Don't play beep/alert/page beeps through OS" },
+	{ &c_cfg.disable_lightning,	FALSE,	2,	9, 132, TRUE,
+	    "disable_lightning",	"Disable visual screen flash effect for lightning" },
+	{ &c_cfg.macros_in_stores,	FALSE,	3,	0, 133, TRUE,
+	    "macros_in_stores",		"Don't disable macros while inside a store" },
+	{ &c_cfg.item_error_beep,	TRUE,	3,	0, 134, TRUE,
+	    "item_error_beep",		"Beep when an item selection fails" },
+	{ &c_cfg.keep_bottle,		FALSE,	3,	0, 135, TRUE,
+	    "keep_bottle",		"Keep the empty bottle when you quaff a potion" },
 
 #if 0 /* todo this maybe. (Page 3 has space left for exactly one more option atm) */
     /* 4.7.3 */
-	{ &c_cfg.extra_indicators,	FALSE,	6,	0, 131, TRUE,
+	{ &c_cfg.extra_indicators,	FALSE,	6,	0, 1XX, TRUE,
 	    "extra_indicators",		"Flicker status bar elements to indicate temp buffs" },
 #endif
 };

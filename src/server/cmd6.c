@@ -243,7 +243,7 @@ bool eat_food(int Ind, int sval, object_type *o_ptr, bool *keep) {
 			msg_print(Ind, "You feel some paper in it - what a pity you cannot see!");
 		} else {
 			msg_print(Ind, "There is message in the cookie. It says:");
-			fortune(Ind, FALSE);
+			fortune(Ind, 1);
 		}
 		ident = TRUE;
 		break;
@@ -380,7 +380,7 @@ bool eat_food(int Ind, int sval, object_type *o_ptr, bool *keep) {
 				if (rand_int(100) < p_ptr->food * magik(o_ptr->name2? 40 : 60) / PY_FOOD_MAX) {
 					msg_print(Ind, "You become nauseous and vomit!");
 					msg_format_near(Ind, "%s vomits!", p_ptr->name);
-					(void)set_food(Ind, (p_ptr->food/2));
+					(void)set_food(Ind, (p_ptr->food / 2));
 					(void)set_poisoned(Ind, 0, 0);
 					(void)set_paralyzed(Ind, p_ptr->paralyzed + 4);
 				}
@@ -444,7 +444,7 @@ void do_cmd_eat_food(int Ind, int item) {
 	if (!can_use_verbose(Ind, o_ptr)) return;
 
 
-	if (o_ptr->tval != TV_FOOD && o_ptr->tval != TV_FIRESTONE) {
+	if (o_ptr->tval != TV_FOOD && o_ptr->tval != TV_FIRESTONE && !(o_ptr->tval == TV_GAME && o_ptr->sval == SV_SNOWBALL)) {
 //(may happen on death, from macro spam)		msg_print(Ind, "SERVER ERROR: Tried to eat non-food!");
 		return;
 	}
@@ -544,7 +544,7 @@ void do_cmd_eat_food(int Ind, int item) {
 				break;
 			}
 		}
-	}
+	} else if (o_ptr->tval == TV_GAME) msg_print(Ind, "Brrrrr.."); //snowball
 
 
 	/* Combine / Reorder the pack (later) */
@@ -770,14 +770,10 @@ bool quaff_potion(int Ind, int tval, int sval, int pval) {
 			if (set_oppose_cold(Ind, randint(10) + 10)) ident = TRUE; /* removed stacking */
 			break;
 		case SV_POTION_HEROISM:
-			if (hp_player(Ind, 10)) ident = TRUE;
-			if (set_afraid(Ind, 0)) ident = TRUE;
 			if (set_hero(Ind, randint(25) + 25)) ident = TRUE; /* removed stacking */
 			break;
 		case SV_POTION_BERSERK_STRENGTH:
-			if (hp_player(Ind, 30)) ident = TRUE;
-			if (set_afraid(Ind, 0)) ident = TRUE;
-			if (set_shero(Ind, randint(25) + 25)) ident = TRUE; /* removed stacking */
+			if (set_shero(Ind, randint(15) + 20)) ident = TRUE; /* removed stacking */
 			break;
 		case SV_POTION_CURE_LIGHT:
 			if (hp_player(Ind, damroll(3, 8))) ident = TRUE;
@@ -1155,7 +1151,7 @@ bool quaff_potion(int Ind, int tval, int sval, int pval) {
 void do_cmd_quaff_potion(int Ind, int item) {
 	player_type *p_ptr = Players[Ind];
 	int ident, lev;
-	object_type *o_ptr;
+	object_type *o_ptr, forge;
 	bool flipped = FALSE;
 
 
@@ -1229,12 +1225,7 @@ void do_cmd_quaff_potion(int Ind, int item) {
 
 	/* Potions can feed the player */
 	if (p_ptr->prace == RACE_VAMPIRE) {
-		if (o_ptr->sval == SV_POTION_BLOOD) {
-			int feed = o_ptr->pval + p_ptr->food;
-			/* never get gorged */
-			if (feed >= PY_FOOD_MAX) feed = PY_FOOD_MAX - 1;
-			set_food(Ind, feed);
-		}
+		if (o_ptr->sval == SV_POTION_BLOOD) set_food(Ind, o_ptr->pval + p_ptr->food);
 	} else if (p_ptr->prace == RACE_ENT) {
 		if (o_ptr->sval == SV_POTION_WATER) (void)set_food(Ind, p_ptr->food + WATER_ENT_FOOD);
 		else (void)set_food(Ind, p_ptr->food + (o_ptr->pval * 2));
@@ -1275,6 +1266,19 @@ void do_cmd_quaff_potion(int Ind, int item) {
 #ifdef USE_SOUND_2010
 	sound(Ind, "quaff_potion", NULL, SFX_TYPE_COMMAND, FALSE);
 #endif
+
+	/* Keep the empty bottle? */
+	if (p_ptr->keep_bottle) {
+		o_ptr = &forge;
+		object_wipe(o_ptr);
+		o_ptr->number = 1;
+		invcopy(o_ptr, lookup_kind(TV_BOTTLE, SV_EMPTY_BOTTLE));
+		o_ptr->level = 1;
+		o_ptr->iron_trade = p_ptr->iron_trade;
+		o_ptr->iron_turn = turn;
+		item = inven_carry(Ind, o_ptr);
+		//if (item >= 0) inven_item_describe(Ind, item);
+	}
 }
 
 #ifdef FOUNTAIN_GUARDS
@@ -1396,17 +1400,12 @@ void do_cmd_drink_fountain(int Ind) {
 		}
 
 		if (p_ptr->prace == RACE_VAMPIRE) {
-			int feed = k_info[lookup_kind(TV_POTION, SV_POTION_BLOOD)].pval + p_ptr->food;
-
 			switch (rand_int(3)) {
 			case 0: msg_print(Ind, "Delicious.");
 			case 1: msg_print(Ind, "It's fresh.");
 			case 2: msg_print(Ind, "You're less thirsty.");
 			}
-
-			/* never get gorged */
-			if (feed >= PY_FOOD_MAX) feed = PY_FOOD_MAX - 1;
-			set_food(Ind, feed);
+			set_food(Ind, k_info[lookup_kind(TV_POTION, SV_POTION_BLOOD)].pval + p_ptr->food);
 		} else if (p_ptr->suscep_life) {
 			msg_print(Ind, "You feel less thirsty.");
 			(void)set_food(Ind, p_ptr->food + 100);
@@ -1724,7 +1723,13 @@ void do_cmd_fill_bottle(int Ind) {
 	q_ptr->iron_trade = p_ptr->iron_trade;
 	q_ptr->iron_turn = turn;
 	item = inven_carry(Ind, q_ptr);
-	if (item >= 0) inven_item_describe(Ind, item);
+
+	if (item >= 0) {
+		q_ptr = &p_ptr->inventory[item];
+		if (!object_aware_p(Ind, q_ptr) || !object_known_p(Ind, q_ptr)) /* was just object_known_p */
+			apply_XID(Ind, q_ptr, item);
+		if (!remember_sense(Ind, item, q_ptr)) inven_item_describe(Ind, item);
+	}
 
 	cs_ptr->sc.fountain.rest--;
 
@@ -1793,7 +1798,7 @@ void do_cmd_empty_potion(int Ind, int slot) {
 	object_wipe(q_ptr);
 	q_ptr->number = 1;
 	invcopy(q_ptr, lookup_kind(TV_BOTTLE, SV_EMPTY_BOTTLE));
-	q_ptr->level = o_ptr->level;
+	q_ptr->level = 1;
 
 	/* Destroy a potion in the pack */
 	inven_item_increase(Ind, slot, -1);
@@ -2064,45 +2069,98 @@ bool curse_an_item(int Ind, int slot) {
 
 /*
  * Cancel magic in inventory.		- Jir -
- * Crappy, isn't it?  But it can..
- *
- * 0x01 - Affect the equipments too
- * 0x02 - Turn scrolls/potions/wands/rods/staves into 'Nothing' kind
+ * Crappy, isn't it?  But it can.. XXX - removed 'flags' (equip only / turn all devs/scrolls/pots to nothing)
+ * Reworked it to be more consistent and work on more stuff. - C. Blue
  */
-bool do_cancellation(int Ind, int flags) {
+bool do_cancellation(int Ind) {
 	player_type *p_ptr = Players[Ind];
 	int i;
 	bool ident = TRUE;
 
-	s_printf("CANCELLATION: %s (%d)\n", p_ptr->name, flags);
+	s_printf("CANCELLATION: %s\n", p_ptr->name);
 
-	for (i = 0; i < ((flags & 0x01) ? INVEN_TOTAL : INVEN_WIELD); i++) {
+	for (i = 0; i < INVEN_WIELD; i++) {
 		object_type *o_ptr = &p_ptr->inventory[i];
+
 		if (!o_ptr->k_idx) continue;
 		if (like_artifact_p(o_ptr)) continue;
-		if (o_ptr->tval == TV_KEY) continue;
-		if (o_ptr->tval == TV_FOOD) continue;
-		if (o_ptr->tval == TV_FLASK) continue;
-		if (o_ptr->tval == TV_CHEST) continue;
-		if (o_ptr->name2 && o_ptr->name2 != EGO_SHATTERED && o_ptr->name2 != EGO_BLASTED) {
-			ident = TRUE;
-			o_ptr->name2 = 0;
-		}
-		if (o_ptr->name2b && o_ptr->name2b != EGO_SHATTERED && o_ptr->name2b != EGO_BLASTED) {
-			ident = TRUE;
-			o_ptr->name2b = 0;
-		}
-		if (o_ptr->name3) o_ptr->name3 = 0; //Kurzel - Fix stacking, see object2.c
-		if (o_ptr->timeout_magic) { //Only affects magical timeouts at the moment, and not even auto-recharging state
+
+		/* All items lose magical timeouts */
+		if (o_ptr->timeout_magic) {
 			ident = TRUE;
 			if (o_ptr->tval == TV_RING && o_ptr->sval == SV_RING_POLYMORPH)
-				o_ptr->timeout_magic = 1;
+				o_ptr->timeout_magic = 1; /* safe handling if equipped */
 			else
 				o_ptr->timeout_magic = 0;
 		}
 
-		/* pval for potions is their nourishment value, for rods bpval and it are (dis)charge, so exempt them */
-		if (o_ptr->tval == TV_ROD || o_ptr->tval == TV_POTION) continue;
+		/* All items lose their ego powers (and pval that goes with it) */
+		if (o_ptr->name2 && o_ptr->name2 != EGO_SHATTERED && o_ptr->name2 != EGO_BLASTED) {
+			ident = TRUE;
+			o_ptr->name2 = 0;
+			o_ptr->pval = 0;
+		}
+		if (o_ptr->name2b && o_ptr->name2b != EGO_SHATTERED && o_ptr->name2b != EGO_BLASTED) {
+			ident = TRUE;
+			o_ptr->name2b = 0;
+			o_ptr->pval = 0;
+		}
+		if (o_ptr->name3) o_ptr->name3 = 0; //Kurzel - Fix stacking, see object2.c
+
+		switch (o_ptr->tval) {
+		/* Discharge magic devices */
+		case TV_WAND:
+		case TV_STAFF:
+			if (o_ptr->pval) {
+				ident = TRUE;
+				o_ptr->pval = 0;
+			}
+			continue;
+		case TV_ROD:
+		case TV_ROD_MAIN:
+			discharge_rod(o_ptr, 50 + rand_int(20));
+			ident = TRUE;
+			continue;
+		/* Specialty: Clear custom books(!) */
+		case TV_BOOK:
+			if (o_ptr->sval == SV_CUSTOM_TOME_1 || o_ptr->sval == SV_CUSTOM_TOME_2 || o_ptr->sval == SV_CUSTOM_TOME_3) {
+				if (o_ptr->xtra1 | o_ptr->xtra2 | o_ptr->xtra3 |
+				    o_ptr->xtra4 | o_ptr->xtra5 | o_ptr->xtra6 |
+				    o_ptr->xtra7 | o_ptr->xtra8 | o_ptr->xtra9)
+					ident = TRUE;
+				o_ptr->xtra1 = o_ptr->xtra2 = o_ptr->xtra3 = 0;
+				o_ptr->xtra4 = o_ptr->xtra5 = o_ptr->xtra6 = 0;
+				o_ptr->xtra7 = o_ptr->xtra8 = o_ptr->xtra9 = 0;
+			}
+			continue;
+		/* Most items lose their +hit, +dam, +ac, pval and bpval enchantments */
+		case TV_LITE:
+		case TV_SOFT_ARMOR:
+		case TV_HARD_ARMOR:
+		case TV_SHIELD:
+		case TV_GLOVES:
+		case TV_BOOTS:
+		case TV_CLOAK:
+		case TV_HELM:
+		case TV_CROWN:
+		case TV_SWORD:
+		case TV_POLEARM:
+		case TV_BLUNT:
+		case TV_DIGGING:
+		case TV_BOW:
+		case TV_BOOMERANG:
+		case TV_MSTAFF:
+		case TV_AXE:
+		case TV_TRAPKIT:
+		case TV_INSTRUMENT:
+		case TV_DRAG_ARMOR:
+		case TV_SHOT:
+		case TV_ARROW:
+		case TV_BOLT:
+			break;
+		/* All other items are not affected */
+		default: continue;
+		}
 
 		if (o_ptr->pval > 0) {
 			ident = TRUE;
@@ -2124,13 +2182,6 @@ bool do_cancellation(int Ind, int flags) {
 			ident = TRUE;
 			o_ptr->to_a = 0;
 		}
-#if 0	// Not so useful anyway
-		if (flags & 0x02) {
-			switch (o_ptr->tval)
-			{
-			}
-		}
-#endif	// 0
 	}
 
 	return (ident);
@@ -2761,7 +2812,7 @@ bool read_scroll(int Ind, int tval, int sval, object_type *o_ptr, int item, bool
 
 		case SV_SCROLL_RUMOR:
 			if (o_ptr) msg_print(Ind, "You read the scroll:");
-			fortune(Ind, magik(40) ? TRUE : FALSE);
+			fortune(Ind, 0);
 			ident = TRUE;
 			break;
 
@@ -2796,7 +2847,7 @@ bool read_scroll(int Ind, int tval, int sval, object_type *o_ptr, int item, bool
 			break;
 
 		case SV_SCROLL_CANCELLATION:
-			ident = do_cancellation(Ind, 0);
+			ident = do_cancellation(Ind);
 			if (ident) msg_print(Ind, "You feel your backpack less worthy.");
 			break;
 
@@ -3548,6 +3599,7 @@ void do_cmd_use_staff(int Ind, int item) {
 
 	if (!activate_magic_device(Ind, o_ptr)) {
 		msg_format(Ind, "\377%cYou failed to use the staff properly." , COLOUR_MD_FAIL);
+		if (check_guard_inscription(o_ptr->note, 'B')) sound(Ind, "bell", NULL, SFX_TYPE_NO_OVERLAP, FALSE);
 #ifdef ENABLE_XID_MDEV
  #ifdef XID_REPEAT
 		/* hack: repeat ID-spell attempt until item is successfully identified */
@@ -3568,7 +3620,8 @@ void do_cmd_use_staff(int Ind, int item) {
 
 	/* Notice empty staffs */
 	if (o_ptr->pval <= 0) {
-		msg_print(Ind, "The staff has no charges left.");
+		msg_format(Ind, "\377%cThe staff has no charges left.", COLOUR_MD_NOCHARGE);
+		if (check_guard_inscription(o_ptr->note, 'B')) sound(Ind, "bell", NULL, SFX_TYPE_NO_OVERLAP, FALSE);
 		o_ptr->ident |= ID_EMPTY;
 		note_toggle_empty(o_ptr, TRUE);
 
@@ -3817,6 +3870,7 @@ void do_cmd_aim_wand(int Ind, int item, int dir) {
 
 	if (!activate_magic_device(Ind, o_ptr)) {
 		msg_format(Ind, "\377%cYou failed to use the wand properly." , COLOUR_MD_FAIL);
+		if (check_guard_inscription(o_ptr->note, 'B')) sound(Ind, "bell", NULL, SFX_TYPE_NO_OVERLAP, FALSE);
 
 		//don't cancel FTK since this failure was just a chance thing
 		if (p_ptr->shooty_till_kill) {
@@ -3833,7 +3887,8 @@ void do_cmd_aim_wand(int Ind, int item, int dir) {
 
 	/* The wand is already empty! */
 	if (o_ptr->pval <= 0) {
-		msg_print(Ind, "The wand has no charges left.");
+		msg_format(Ind, "\377%cThe wand has no charges left.", COLOUR_MD_NOCHARGE);
+		if (check_guard_inscription(o_ptr->note, 'B')) sound(Ind, "bell", NULL, SFX_TYPE_NO_OVERLAP, FALSE);
 		o_ptr->ident |= ID_EMPTY;
 		note_toggle_empty(o_ptr, TRUE);
 
@@ -4442,6 +4497,8 @@ void do_cmd_zap_rod(int Ind, int item, int dir) {
 
 	if (!activate_magic_device(Ind, o_ptr)) {
 		msg_format(Ind, "\377%cYou failed to use the rod properly." , COLOUR_MD_FAIL);
+		if (check_guard_inscription(o_ptr->note, 'B')) sound(Ind, "bell", NULL, SFX_TYPE_NO_OVERLAP, FALSE);
+
 #ifdef ENABLE_XID_MDEV
  #ifdef XID_REPEAT
 		/* hack: repeat ID-spell attempt until item is successfully identified */
@@ -4466,8 +4523,10 @@ void do_cmd_zap_rod(int Ind, int item, int dir) {
 #else
 	if (o_ptr->bpval == o_ptr->number) {
 #endif
-		if (o_ptr->number == 1) msg_print(Ind, "The rod is still charging.");
-		else msg_print(Ind, "The rods are still charging.");
+		if (o_ptr->number == 1) msg_format(Ind, "\377%cThe rod is still charging.", COLOUR_MD_NOCHARGE);
+		else msg_format(Ind, "\377%cThe rods are still charging.", COLOUR_MD_NOCHARGE);
+		if (check_guard_inscription(o_ptr->note, 'B')) sound(Ind, "bell", NULL, SFX_TYPE_NO_OVERLAP, FALSE);
+
 #ifdef ENABLE_XID_MDEV
  #ifndef XID_REPEAT
 		p_ptr->current_item = -1;
@@ -4684,6 +4743,7 @@ void do_cmd_zap_rod_dir(int Ind, int dir) {
 	/* Roll for usage */
 	if (!activate_magic_device(Ind, o_ptr)) {
 		msg_format(Ind, "\377%cYou failed to use the rod properly." , COLOUR_MD_FAIL);
+		if (check_guard_inscription(o_ptr->note, 'B')) sound(Ind, "bell", NULL, SFX_TYPE_NO_OVERLAP, FALSE);
 
 		//don't cancel FTK since this failure was just a chance thing
 		if (p_ptr->shooty_till_kill) {
@@ -4704,8 +4764,9 @@ void do_cmd_zap_rod_dir(int Ind, int dir) {
 #else
 	if (o_ptr->bpval == o_ptr->number) {
 #endif
-		if (o_ptr->number == 1) msg_print(Ind, "The rod is still charging.");
-		else msg_print(Ind, "The rods are still charging.");
+		if (o_ptr->number == 1) msg_format(Ind, "\377%cThe rod is still charging.", COLOUR_MD_NOCHARGE);
+		else msg_format(Ind, "\377%cThe rods are still charging.", COLOUR_MD_NOCHARGE);
+		if (check_guard_inscription(o_ptr->note, 'B')) sound(Ind, "bell", NULL, SFX_TYPE_NO_OVERLAP, FALSE);
 		return;
 	}
 
@@ -5252,6 +5313,12 @@ bool activation_requires_direction(object_type *o_ptr) {
 		}
 	}
 
+#ifdef ENABLE_EXCAVATION
+	else if (o_ptr->tval == TV_CHARGE &&
+	    (o_ptr->sval == SV_CHARGE_SBLAST || o_ptr->sval == SV_CHARGE_FIREWALL || o_ptr->sval == SV_CHARGE_CASCADING))
+		return TRUE;
+#endif
+
 	/* All other items aren't activatable */
 	return FALSE;
 }
@@ -5424,10 +5491,21 @@ void do_cmd_activate(int Ind, int item, int dir) {
 	p_ptr->energy -= level_speed(&p_ptr->wpos);
 
 	/* Roll for usage */
+#ifdef ENABLE_EXCAVATION
+	if (o_ptr->tval == TV_CHEMICAL) ;
+	else if (o_ptr->tval == TV_CHARGE) {
+		if (rand_int(k_info[o_ptr->k_idx].level) > rand_int(get_skill_scale(p_ptr, SKILL_DIG, 100))) {
+			msg_format(Ind, "\377%cYou failed to set the charge up properly.", COLOUR_MD_FAIL);
+			return;
+		}
+	} else
+#endif
 	if (!activate_magic_device(Ind, o_ptr) &&
 	    o_ptr->tval != TV_BOOK) /* hack: blank books can always be 'activated' */
 	{
 		msg_format(Ind, "\377%cYou failed to activate it properly.", COLOUR_MD_FAIL);
+		if (check_guard_inscription(o_ptr->note, 'B')) sound(Ind, "bell", NULL, SFX_TYPE_NO_OVERLAP, FALSE);
+
 #ifdef ENABLE_XID_MDEV
  #ifdef XID_REPEAT
 		/* hack: repeat ID-spell attempt until item is successfully identified */
@@ -5448,7 +5526,8 @@ void do_cmd_activate(int Ind, int item, int dir) {
 
 	/* Check the recharge */
 	if (o_ptr->recharging) {
-		msg_print(Ind, "It whines, glows and fades...");
+		msg_format(Ind, "\377%cIt whines, glows and fades...", COLOUR_MD_NOCHARGE);
+		if (check_guard_inscription(o_ptr->note, 'B')) sound(Ind, "bell", NULL, SFX_TYPE_NO_OVERLAP, FALSE);
 #ifdef ENABLE_XID_SPELL
  #ifndef XID_REPEAT
 		p_ptr->current_item = -1;
@@ -5467,13 +5546,16 @@ void do_cmd_activate(int Ind, int item, int dir) {
  #endif
 #endif
 
-	if (o_ptr->tval != TV_RUNE) { //Disable rune 'you activate it' text.
-		if (o_ptr->tval != TV_BOOK) {
-			/* Wonder Twin Powers... Activate! */
-			msg_print(Ind, "You activate it...");
-		} else {
-			msg_print(Ind, "You open the book to add another new spell..");
-		}
+	switch (o_ptr->tval) {
+	case TV_RUNE: break;
+	case TV_BOOK: msg_print(Ind, "You open the book to add a new spell.."); break;
+#ifdef ENABLE_EXCAVATION
+	case TV_CHEMICAL: case TV_CHARGE: break;
+	case TV_TOOL: if (o_ptr->sval == SV_TOOL_GRINDER) break; //else: fall through
+#endif
+	default:
+		/* Wonder Twin Powers... Activate! */
+		msg_print(Ind, "You activate it...");
 	}
 
 	break_cloaking(Ind, 0);
@@ -5680,6 +5762,67 @@ void do_cmd_activate(int Ind, int item, int dir) {
 		p_ptr->using_up_item = item; /* hack - gets swapped later */
 		return;
 	}
+
+#ifdef ENABLE_EXCAVATION
+	if (o_ptr->tval == TV_CHEMICAL) {
+		/* Hack - exempt wood chips:
+		   These aren't a prepared ingredient yet and need to be refined into charcoal first! */
+		if (o_ptr->sval == SV_WOOD_CHIPS) {
+			/* Require a fiery light source */
+			object_type forge, *ox_ptr = &p_ptr->inventory[INVEN_LITE];
+
+			if (!ox_ptr->k_idx || ox_ptr->sval == SV_LITE_FEANORIAN) {
+				msg_print(Ind, "You need to equip a fire-based light source to process the wood chips.");
+				return;
+			}
+
+ #ifdef USE_SOUND_2010
+			//sound(Ind, "item_rune", NULL, SFX_TYPE_COMMAND, FALSE);
+			sound_item(Ind, ox_ptr->tval, ox_ptr->sval, "wearwield_");
+ #endif
+
+			msg_print(Ind, "You heat the wood chips, turning them into charcoal.");
+			ox_ptr = &forge;
+			invcopy(ox_ptr, lookup_kind(TV_CHEMICAL, SV_CHARCOAL));
+			ox_ptr->weight = k_info[ox_ptr->k_idx].weight;
+			ox_ptr->owner = o_ptr->owner;
+			ox_ptr->mode = o_ptr->mode;
+			ox_ptr->pval = k_info[ox_ptr->k_idx].pval;
+			ox_ptr->level = 0;//k_info[ox_ptr->k_idx].level;
+			ox_ptr->discount = 0;
+			ox_ptr->number = 1;
+			ox_ptr->note = 0;
+			ox_ptr->iron_trade = o_ptr->iron_trade;
+			ox_ptr->iron_turn = o_ptr->iron_turn;
+
+			/* Erase the ingredients in the pack */
+			inven_item_increase(Ind, item, -1);
+			//inven_item_describe(Ind, item);
+			inven_item_optimize(Ind, item);
+
+			/* Place charcoal into inventory */
+			inven_carry(Ind, ox_ptr);
+			return;
+		}
+		clear_current(Ind);
+		p_ptr->current_chemical = TRUE;
+		//p_ptr->using_up_item = item;
+		p_ptr->current_activation = item;
+		get_item(Ind, ITH_CHEMICAL);
+		return;
+	}
+	if (o_ptr->tval == TV_CHARGE) {
+		arm_charge(Ind, item, 0);
+		return;
+	}
+	if (o_ptr->tval == TV_TOOL && o_ptr->sval == SV_TOOL_GRINDER) {
+		clear_current(Ind);
+		p_ptr->current_activation = item; //remember grinding tool
+		p_ptr->current_chemical = TRUE;
+		get_item(Ind, ITH_NONE);
+		return;
+	}
+#endif
 
 	// -------------------- artifacts -------------------- //
 
@@ -5910,9 +6053,6 @@ void do_cmd_activate(int Ind, int item, int dir) {
 			break;
 		case ART_BLADETURNER:
 			msg_print(Ind, "Your armour glows in many colours...");
-			(void)hp_player(Ind, 30);
-			(void)set_afraid(Ind, 0);
-			(void)set_res_fear(Ind, 20);
 			(void)set_shero(Ind, randint(50) + 50); /* removed stacking */
 			//p_ptr->blessed_power = 20;
 			//(void)set_blessed(Ind, randint(50) + 50); /* removed stacking */
@@ -6002,9 +6142,7 @@ void do_cmd_activate(int Ind, int item, int dir) {
 			o_ptr->recharging = rand_int(200) + 200 - get_skill_scale(p_ptr, SKILL_DEVICE, 100);
 			break;
 		case ART_HARADRIM:
-			set_afraid(Ind, 0);
 			set_shero(Ind, randint(25) + 25); /* removed stacking */
-			hp_player(Ind, 30);
 			o_ptr->recharging = rand_int(40) + 50 - get_skill_scale(p_ptr, SKILL_DEVICE, 35);
 			break;
 		case ART_FUNDIN:
@@ -6339,12 +6477,9 @@ void do_cmd_activate(int Ind, int item, int dir) {
 			break;
 		case ART_ROHAN:
 			msg_print(Ind, "Your horn glows deep red.");
-			set_afraid(0);
-			set_shero(Ind, damroll(5,10) + 30); /* removed stacking */
-			set_afraid(0);
 			set_hero(Ind, damroll(5,10) + 30); /* removed stacking */
 			set_fast(Ind, damroll(5,10) + 30, 20); /* removed stacking */
-			hp_player(30);
+			set_shero(Ind, damroll(5,10) + 30); /* removed stacking */
 			o_ptr->recharging = 250 + randint(50) - get_skill_scale(p_ptr, SKILL_DEVICE, 150);
 			break;
 		case ART_HELM:
@@ -6366,8 +6501,6 @@ void do_cmd_activate(int Ind, int item, int dir) {
 #endif	// 0
 		case ART_HURIN:
 			(void)set_fast(Ind, randint(50) + 50, 10); /* removed stacking */
-			hp_player(Ind, 30);
-			set_afraid(Ind, 0);
 			set_shero(Ind, randint(50) + 50); /* removed stacking */
 			o_ptr->recharging = rand_int(75) + 175 - get_skill_scale(p_ptr, SKILL_DEVICE, 100);
 			break;
@@ -6429,6 +6562,9 @@ void do_cmd_activate(int Ind, int item, int dir) {
 			} else {
 				msg_print(Ind, "Your gloves shimmer..");
 			}
+			break;
+		case ART_GOGGLES_DM:
+			identify_pack(Ind);
 			break;
 		case ART_AMUGROM:
 			msg_print(Ind, "The amulet sparkles in scintillating colours...");
@@ -6530,9 +6666,7 @@ void do_cmd_activate(int Ind, int item, int dir) {
 			/* Done */
 			return;
 		} else if (is_ego_p(o_ptr, EGO_FURY)) {
-			set_afraid(Ind, 0);
 			set_fury(Ind, rand_int(5) + 15); /* removed stacking */
-			hp_player(Ind, 40);
 			o_ptr->recharging = 100 + randint(50) - get_skill_scale(p_ptr, SKILL_DEVICE, 50);
 			/* Window stuff */
 			p_ptr->window |= (PW_INVEN | PW_EQUIP);
@@ -6616,9 +6750,7 @@ void do_cmd_activate(int Ind, int item, int dir) {
 		/* Amulets of rage can be activated for berserk strength */
 		case SV_AMULET_RAGE:
 			msg_print(Ind, "Your amulet sparkles bright red...");
-			set_afraid(Ind, 0);
 			set_fury(Ind, randint(10) + 15); /* removed stacking */
-			hp_player(Ind, 40);
 			o_ptr->recharging = rand_int(150) + 250 - get_skill_scale(p_ptr, SKILL_DEVICE, 150);
 			p_ptr->window |= (PW_INVEN | PW_EQUIP);
 			return;
@@ -6949,9 +7081,7 @@ void do_cmd_activate_dir(int Ind, int dir) {
 			sprintf(p_ptr->attacker, " breathes the elements for");
 			fire_ball(Ind, GF_MISSILE, dir, 300 + get_skill_scale(p_ptr, SKILL_DEVICE, 300), 4, p_ptr->attacker);
 			msg_print(Ind, "Your armour glows in many colours...");
-			(void)set_afraid(Ind, 0);
 			(void)set_shero(Ind, randint(50) + 50); /* removed stacking */
-			(void)hp_player(Ind, 30);
 			//p_ptr->blessed_power = 20;
 			//(void)set_blessed(Ind, randint(50) + 50); /* removed stacking */
 			(void)set_oppose_acid(Ind, randint(50) + 50); /* removed stacking */
@@ -7019,6 +7149,13 @@ void do_cmd_activate_dir(int Ind, int dir) {
 	// -------------------- ego items -------------------- //
 
 	// -------------------- base items -------------------- //
+
+#ifdef ENABLE_EXCAVATION
+	if (o_ptr->tval == TV_CHARGE) {
+		arm_charge(Ind, item, dir);
+		return;
+	}
+#endif
 
 	if (!done && o_ptr->tval == TV_DRAG_ARMOR && item == INVEN_BODY) {
 		switch (o_ptr->sval) {
@@ -7386,31 +7523,43 @@ bool unmagic(int Ind) {
 /*
  * Displays random fortune/rumour.
  * Thanks Mihi!		- Jir -
+ * Mode (added for distributing game-related info, in this case ENABLE_EXCAVATION recipes,
+ *       basically abusing fortune() as a sort of wilderness-mapping-scroll for other info ^^ - C. Blue:
+ * 0: Scroll (usually broadcast, but we want to switch to private here if we 'leak' game info as explained above),
+ * 1: Cookie/fortune teller (non-broadcast),
+ * 2: MUCHO_RUMOURS (broadcast, extra game events, cannot be made private)
  */
-void fortune(int Ind, bool broadcast) {
+void fortune(int Ind, byte mode) {
 	char Rumor[MAX_CHARS_WIDE], Broadcast[MAX_CHARS];
+	bool broadcast = (mode != 1);
 
 	strcpy(Broadcast, "Suddenly a thought comes to your mind:");
 	msg_print(Ind, NULL);
 
-	//switch(randint(20))
-	switch(randint(80)) {
+	/* Leak game info sometimes secretly to a player? (non-broadcast) */
+	if (!mode && magik(cfg.leak_info)) {
+		broadcast = FALSE;
+		strcpy(Broadcast, "Suddenly an idea comes to your mind:");
+		get_rnd_line("leakinfo.txt", 0, Rumor, MAX_CHARS_WIDE);
+	} else
+	/* Normal rumours and stuff */
+	switch (6) { // <- '6': currently only use rumors.txt for rumours..
 	case 1:
-		get_rnd_line("chainswd.txt",0 , Rumor, MAX_CHARS_WIDE);
+		get_rnd_line("chainswd.txt", 0, Rumor, MAX_CHARS_WIDE);
 		break;
 	case 2:
-		get_rnd_line("error.txt",0 , Rumor, MAX_CHARS_WIDE);
+		get_rnd_line("error.txt", 0, Rumor, MAX_CHARS_WIDE);
 		break;
 	case 3:
 	case 4:
 	case 5:
-		get_rnd_line("death.txt",0 , Rumor, MAX_CHARS_WIDE);
+		get_rnd_line("death.txt", 0, Rumor, MAX_CHARS_WIDE);
 		break;
 	default:
 		if (magik(95)) get_rnd_line("rumors.txt",0 , Rumor, MAX_CHARS_WIDE);
 		else {
 			strcpy(Broadcast, "Suddenly an important thought comes to your mind:");
-			get_rnd_line("hints.txt",0 , Rumor, MAX_CHARS_WIDE);
+			get_rnd_line("hints.txt", 0, Rumor, MAX_CHARS_WIDE);
 		}
 	}
 
@@ -8254,8 +8403,6 @@ s_printf("TECHNIQUE_MELEE: %s - assassinate\n", p_ptr->name);
 
 		p_ptr->cst -= 10;
 		un_afk_idle(Ind);
-		hp_player(Ind, 20);
-		set_afraid(Ind, 0);
 		set_shero(Ind, randint(5) + 15);
 s_printf("TECHNIQUE_MELEE: %s - berserk\n", p_ptr->name);
 		p_ptr->warning_technique_melee = 1;
@@ -8343,7 +8490,7 @@ void do_cmd_ranged_technique(int Ind, int technique) {
 		}
 #endif
 		for (i = 0; i < INVEN_WIELD; i++)
-			if (p_ptr->inventory[i].tval == TV_FLASK) { /* oil */
+			if (p_ptr->inventory[i].tval == TV_FLASK && p_ptr->inventory[i].sval == SV_FLASK_OIL) {
 				//p_ptr->cst -= 2;
 				p_ptr->ranged_flare = TRUE;
 				inven_item_increase(Ind, i, -1);

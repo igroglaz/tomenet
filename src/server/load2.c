@@ -570,6 +570,12 @@ static void rd_item(object_type *o_ptr) {
 		rd_s32b(&o_ptr->iron_turn);
 	}
 
+	if (!older_than(4, 7, 9)) rd_byte(&o_ptr->embed);
+	else o_ptr->embed = 0;
+
+
+	/* --- Process/verify the item --- */
+
 
 	/* Obtain k_idx from tval/sval instead :) */
 	if (o_ptr->k_idx)	/* zero is cipher :) */
@@ -609,9 +615,6 @@ static void rd_item(object_type *o_ptr) {
 
 	/* Acquire standard weight */
 	o_ptr->weight = k_ptr->weight;
-
-	/* Hack -- extract the "broken" flag */
-	if (k_ptr->cost <= 0) o_ptr->ident |= ID_BROKEN;
 
 	/* Artifacts */
 	if (o_ptr->name1) {
@@ -663,6 +666,11 @@ static void rd_item(object_type *o_ptr) {
 		o_ptr->dd += a_ptr->dd;
 		o_ptr->ds += a_ptr->ds;
 #endif
+
+		/* Hard-coded fix :/ */
+		if (o_ptr->name2 == EGO_SHATTERED || o_ptr->name2b == EGO_SHATTERED ||
+		    o_ptr->name2 == EGO_BLASTED || o_ptr->name2b == EGO_BLASTED)
+			o_ptr->ac = o_ptr->dd = o_ptr->ds = 0;
 
 		/* Hack -- extract the "broken" flag */
 		if (o_ptr->name2) {
@@ -1107,14 +1115,14 @@ static void rd_bbs() {
 
 	rd_s16b(&saved_lines);
 
-#if 0
-	for (i = 0; ((i < BBS_LINES) && (i < saved_lines)); i++)
-		rd_string(bbs_line[i], MAX_CHARS_WIDE);
-#else
 	for (i = 0; i < saved_lines; i++)
-		if (i >= BBS_LINES) rd_string(dummy, MAX_CHARS_WIDE);
-		else rd_string(bbs_line[i], MAX_CHARS_WIDE);
-#endif
+		if (i >= BBS_LINES) {
+			rd_string(dummy, MAX_CHARS_WIDE);
+			if (!s_older_than(4, 7, 10)) rd_string(dummy, MAX_CHARS_WIDE);
+		} else {
+			rd_string(bbs_line[i], MAX_CHARS_WIDE);
+			if (!s_older_than(4, 7, 10)) rd_string(bbs_line_u[i], MAX_CHARS_WIDE);
+		}
 
 	/* load pbbs & gbbs - C. Blue */
 	if (!s_older_than(4, 4, 9)) {
@@ -1123,22 +1131,36 @@ static void rd_bbs() {
 		for (j = 0; j < parties; j++)
 			if (j < MAX_PARTIES) {
 				for (i = 0; i < saved_lines; i++)
-					if (i >= BBS_LINES) rd_string(dummy, MAX_CHARS_WIDE);
-					else rd_string(pbbs_line[j][i], MAX_CHARS_WIDE);
+					if (i >= BBS_LINES) {
+						rd_string(dummy, MAX_CHARS_WIDE);
+						if (!s_older_than(4, 7, 10)) rd_string(dummy, MAX_CHARS_WIDE);
+					} else {
+						rd_string(pbbs_line[j][i], MAX_CHARS_WIDE);
+						if (!s_older_than(4, 7, 10)) rd_string(pbbs_line_u[j][i], MAX_CHARS_WIDE);
+					}
 			} else {
-				for (i = 0; i < saved_lines; i++)
+				for (i = 0; i < saved_lines; i++) {
 					rd_string(dummy, MAX_CHARS_WIDE);
+					if (!s_older_than(4, 7, 10)) rd_string(dummy, MAX_CHARS_WIDE);
+				}
 			}
 		/* read old guilds */
 		rd_s16b(&guilds);
 		for (j = 0; j < guilds; j++)
 			if (j < MAX_GUILDS) {
 				for (i = 0; i < saved_lines; i++)
-					if (i >= BBS_LINES) rd_string(dummy, MAX_CHARS_WIDE);
-					else rd_string(gbbs_line[j][i], MAX_CHARS_WIDE);
+					if (i >= BBS_LINES) {
+						rd_string(dummy, MAX_CHARS_WIDE);
+						if (!s_older_than(4, 7, 10)) rd_string(dummy, MAX_CHARS_WIDE);
+					} else {
+						rd_string(gbbs_line[j][i], MAX_CHARS_WIDE);
+						if (!s_older_than(4, 7, 10)) rd_string(gbbs_line_u[j][i], MAX_CHARS_WIDE);
+					}
 			} else {
-				for (i = 0; i < saved_lines; i++)
+				for (i = 0; i < saved_lines; i++) {
 					rd_string(dummy, MAX_CHARS_WIDE);
+					if (!s_older_than(4, 7, 10)) rd_string(dummy, MAX_CHARS_WIDE);
+				}
 			}
 	}
 }
@@ -1152,11 +1174,13 @@ static void rd_notes() {
 	for (i = 0; i < j; i++) {
 		if (i >= MAX_NOTES) {
 			rd_string(dummy, MAX_CHARS_WIDE);
+			if (!s_older_than(4, 7, 10)) rd_string(dummy, MAX_CHARS_WIDE);
 			rd_string(dummy, NAME_LEN);
 			rd_string(dummy, NAME_LEN);
 			continue;
 		}
 		rd_string(priv_note[i], MAX_CHARS_WIDE);
+		if (!s_older_than(4, 7, 10)) rd_string(priv_note_u[i], MAX_CHARS_WIDE);
 		rd_string(priv_note_sender[i], NAME_LEN);
 		rd_string(priv_note_target[i], NAME_LEN);
 	}
@@ -1165,10 +1189,12 @@ static void rd_notes() {
 	for (i = 0; i < j; i++) {
 		if (i >= MAX_PARTYNOTES) {
 			rd_string(dummy, MAX_CHARS_WIDE);
+			if (!s_older_than(4, 7, 10)) rd_string(dummy, MAX_CHARS_WIDE);
 			rd_string(dummy, NAME_LEN);
 			continue;
 		}
 		rd_string(party_note[i], MAX_CHARS_WIDE);
+		if (!s_older_than(4, 7, 10)) rd_string(party_note_u[i], MAX_CHARS_WIDE);
 		rd_string(party_note_target[i], NAME_LEN);
 	}
 
@@ -1176,10 +1202,12 @@ static void rd_notes() {
 	for (i = 0; i < j; i++) {
 		if (i >= MAX_GUILDNOTES) {
 			rd_string(dummy, MAX_CHARS_WIDE);
+			if (!s_older_than(4, 7, 10)) rd_string(dummy, MAX_CHARS_WIDE);
 			rd_string(dummy, NAME_LEN);
 			continue;
 		}
 		rd_string(guild_note[i], MAX_CHARS_WIDE);
+		if (!s_older_than(4, 7, 10)) rd_string(guild_note_u[i], MAX_CHARS_WIDE);
 		rd_string(guild_note_target[i], NAME_LEN);
 	}
 	//omitted (use custom.lua instead): admin_note[MAX_ADMINNOTES]
@@ -1402,10 +1430,10 @@ static void rd_party(int n) {
 	party_type *party_ptr = &parties[n];
 
 	/* Party name */
-	rd_string(party_ptr->name, 80);
+	rd_string(party_ptr->name, NAME_LEN);
 
 	/* Party owner's name */
-	rd_string(party_ptr->owner, 20);
+	rd_string(party_ptr->owner, NAME_LEN);
 
 	/* Number of people and creation time */
 	rd_s32b(&party_ptr->members);
@@ -1796,7 +1824,7 @@ static bool rd_extra(int Ind) {
 			rd_byte(&tmp8u);
 			p_ptr->max_depth_tower[i] = (tmp8u != 0);
 			/* hack: fix for chars that logged in before this was completed properly */
-			if (p_ptr->max_depth[i] > 200) p_ptr->temp_misc_2 |= 0x04;
+			if (p_ptr->max_depth[i] > 200) p_ptr->temp_misc_1 |= 0x20;
 		}
 	}
 	/* else branch is in rd_savefile_new_aux() since we need wild_map[] array */
@@ -2122,10 +2150,7 @@ if (p_ptr->updated_savegame == 0) {
 		p_ptr->mimic_immunity = tmp8u;
 	}
 
-	if (!older_than(4, 5, 4)) {
-		rd_u16b(&tmp16u);
-		p_ptr->autoret = tmp16u;
-	}
+	if (!older_than(4, 5, 4)) rd_u16b(&p_ptr->autoret);
 	else p_ptr->autoret = 0;
 
 	if (!older_than(4, 0, 6)) rd_s16b(&p_ptr->martyr_timeout);
@@ -2260,9 +2285,9 @@ if (p_ptr->updated_savegame == 0) {
 
 		/* array of 'warnings' and hints aimed at newbies */
 		rd_u16b(&tmp16u);
-		if (tmp16u | 0x01) p_ptr->warning_technique_melee = 1;
-		if (tmp16u | 0x02) p_ptr->warning_technique_ranged = 1;
-		if (tmp16u | 0x04) p_ptr->warning_drained = 1;
+		if (tmp16u & 0x01) p_ptr->warning_technique_melee = 1;
+		if (tmp16u & 0x02) p_ptr->warning_technique_ranged = 1;
+		if (tmp16u & 0x04) p_ptr->warning_drained = 1;
 	} else {
 		/* auto-enable for now (MAX_AURAS) */
 		if (get_skill(p_ptr, SKILL_AURA_FEAR)) p_ptr->aura[0] = TRUE;
@@ -2950,11 +2975,11 @@ static errr rd_savefile_new_aux(int Ind) {
 	}
 
 	/* continued 'else' branch from rd_extra(), now that we have wild_map[] array */
-	if (older_than(4, 4, 23) || (p_ptr->temp_misc_2 & 0x04)) {
+	if (older_than(4, 4, 23) || (p_ptr->temp_misc_1 & 0x20)) {
 		/* in case we're here by a fix-hack */
-		if (p_ptr->temp_misc_2 & 0x04) {
+		if (p_ptr->temp_misc_1 & 0x20) {
 			s_printf("fixing max_depth[] for '%s'\n", p_ptr->name);
-			p_ptr->temp_misc_2 &= ~0x04;
+			p_ptr->temp_misc_1 &= ~0x20;
 		}
 
 		/* hack - Sauron vs Shadow of Dol Guldur - just for consistency */
@@ -3453,6 +3478,7 @@ errr rd_server_savefile() {
 		struct worldpos wpos;
 		byte houses;
 		byte winner;
+		byte order;
 
 		rd_u32b(&tmp32u);
 
@@ -3503,13 +3529,25 @@ errr rd_server_savefile() {
 			if (!s_older_than(4, 6, 8)) rd_byte(&winner);
 			else winner = 0;
 
+			if (!s_older_than(4, 7, 8)) rd_byte(&order);
+			else order = 0;
+
+#if 0 /* moved below for efficiency, this is processing the same account multiple times. See init_character_ordering(0). */
+			/* Instead of keeping unordered characters and relying on /initorder admin command, we
+			   automatically create order, by copying the 'natural' order (order in the database, ie player_id_list) */
+			if (!order) init_account_order(0, acct);
+#endif
+
 			/* Store the player name */
-			add_player_name(name, tmp32s, acct, race, class, mode, level, max_plv, party, guild, guild_flags, xorder, laston, admin, wpos, (char)houses, winner);
+			add_player_name(name, tmp32s, acct, race, class, mode, level, max_plv, party, guild, guild_flags, xorder, laston, admin, wpos, (char)houses, winner, order);
 		}
 		s_printf("Read %d player name records.\n", tmp32u);
 	}
 
-
+#if 1
+	/* (Re)Set natural order for all accounts that still have at least one unordered character. */
+	init_character_ordering(0);
+#endif
 
 	rd_u32b(&seed_flavor);
 	rd_u32b(&seed_town);
@@ -3653,7 +3691,7 @@ errr rd_server_savefile() {
 					s_printf("INIT_ACC_HOUSE_LIMIT_OK: '%s' has %d houses\n", ptr->name, tmp8u);
 
 					w = (p_ptr->total_winner ? 1 : 0) + (p_ptr->once_winner ? 2 : 0) + (p_ptr->iron_winner ? 4 : 0) + (p_ptr->iron_winner_ded ? 8 : 0);
-					verify_player(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, p_ptr->lev, p_ptr->party, p_ptr->guild, p_ptr->guild_flags, 0, time(&ttime), p_ptr->admin_dm ? 1 : (p_ptr->admin_wiz ? 2 : 0), p_ptr->wpos, (char)tmp8u, w);
+					verify_player(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, p_ptr->lev, p_ptr->party, p_ptr->guild, p_ptr->guild_flags, 0, time(&ttime), p_ptr->admin_dm ? 1 : (p_ptr->admin_wiz ? 2 : 0), p_ptr->wpos, (char)tmp8u, w, 100);
 				}
 
 				/* unhack */

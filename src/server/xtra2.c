@@ -1184,6 +1184,7 @@ bool set_fury(int Ind, int v) {
 	/* Open */
 	if (v) {
 		if (!p_ptr->fury) {
+			set_afraid(Ind, 0);
 			if (p_ptr->shero) {
 				msg_print(Ind, "You cannot grow additional fury while in a berserk rage!");
 				return FALSE;
@@ -1196,7 +1197,7 @@ bool set_fury(int Ind, int v) {
 	/* Shut */
 	else {
 		if (p_ptr->fury) {
-			msg_print(Ind, "The fury stops.");
+			msg_print(Ind, "You calm down again.");
 			notice = TRUE;
 		}
 	}
@@ -1685,6 +1686,7 @@ bool set_diseased(int Ind, int v, int attacker) {
 
 	if (v) {
 		if (p_ptr->martyr) return FALSE;
+		if (p_ptr->ghost) return FALSE;
 		if (p_ptr->prace == RACE_VAMPIRE || p_ptr->prace == RACE_MAIA) return FALSE;
 	}
 
@@ -2183,6 +2185,8 @@ bool set_hero(int Ind, int v) {
 	/* Open */
 	if (v) {
 		if (!p_ptr->hero) {
+			hp_player(Ind, 10);
+			set_afraid(Ind, 0);
 			msg_format_near(Ind, "%s has become a hero.", p_ptr->name);
 			msg_print(Ind, "You feel like a hero!");
 			notice = TRUE;
@@ -2231,10 +2235,14 @@ bool set_shero(int Ind, int v) {
 	/* Open */
 	if (v) {
 		if (!p_ptr->shero) {
+			hp_player(Ind, 30);
+			set_afraid(Ind, 0);
+
 			if (p_ptr->fury) {
 				msg_print(Ind, "The berserk rage replaces your fury!");
 				set_fury(Ind, 0);
 			}
+
 			msg_format_near(Ind, "%s has become a killing machine.", p_ptr->name);
 			msg_print(Ind, "You feel like a killing machine!");
 			notice = TRUE;
@@ -3753,25 +3761,23 @@ bool set_food(int Ind, int v) {
 	int old_aux, new_aux;
 	bool notice = FALSE;
 
-	/* True Ghosts don't starve */
+	/* True Ghosts, Divinely supported and Enlightened Maiar don't starve */
 	if ((p_ptr->ghost) || (get_skill(p_ptr, SKILL_HSUPPORT) == 50) ||
 	    (p_ptr->prace == RACE_MAIA && p_ptr->ptrait)) {
 		p_ptr->food = PY_FOOD_FULL - 1;
 		return (FALSE);
 	}
+	/* Ents and true vampires will never get gorged, but can still go hungry/thirsty */
+	if ((p_ptr->prace == RACE_ENT || p_ptr->prace == RACE_VAMPIRE) && v >= PY_FOOD_MAX) v = PY_FOOD_MAX - 1;
 
-	/* Warrior does not need food badly */
 #ifdef ARCADE_SERVER
+	/* Warrior does not need food badly */
 	p_ptr->food = PY_FOOD_FULL - 1;
 	return (FALSE);
 #endif
+
 	/* Hack -- Force good values */
 	v = (v > 20000) ? 20000 : (v < 0) ? 0 : v;
-
-	/* Ents will never get gorged, but can still go hungry/thirsty */
-	if (p_ptr->prace == RACE_ENT && v >= PY_FOOD_MAX ) {
-		v = PY_FOOD_MAX - 1;
-	}
 
 	/* Fainting / Starving */
 	if (p_ptr->food < PY_FOOD_FAINT) old_aux = 0;
@@ -3803,30 +3809,30 @@ bool set_food(int Ind, int v) {
 	if (new_aux > old_aux) {
 		/* Describe the state */
 		switch (new_aux) {
-			/* Weak */
-			case 1:
-			msg_print(Ind, "You are still weak.");
-			break;
+		/* Weak */
+		case 1:
+		msg_print(Ind, "You are still weak.");
+		break;
 
-			/* Hungry */
-			case 2:
-			msg_print(Ind, "You are still hungry.");
-			break;
+		/* Hungry */
+		case 2:
+		msg_print(Ind, "You are still hungry.");
+		break;
 
-			/* Normal */
-			case 3:
-			msg_print(Ind, "You are no longer hungry.");
-			break;
+		/* Normal */
+		case 3:
+		msg_print(Ind, "You are no longer hungry.");
+		break;
 
-			/* Full */
-			case 4:
-			msg_print(Ind, "You are full!");
-			break;
+		/* Full */
+		case 4:
+		msg_print(Ind, "You are full!");
+		break;
 
-			/* Bloated */
-			case 5:
-			msg_print(Ind, "You have gorged yourself!");
-			break;
+		/* Bloated */
+		case 5:
+		msg_print(Ind, "You have gorged yourself!");
+		break;
 		}
 
 		/* Change */
@@ -3837,13 +3843,13 @@ bool set_food(int Ind, int v) {
 	else if (new_aux < old_aux) {
 		/* Describe the state */
 		switch (new_aux) {
-			/* Fainting / Starving */
-			case 0:
+		/* Fainting / Starving */
+		case 0:
 			msg_print(Ind, "\377RYou are getting faint from hunger!");
 			break;
 
-			/* Weak */
-			case 1:
+		/* Weak */
+		case 1:
 			msg_print(Ind, "You are getting weak from hunger!");
 			if (p_ptr->warning_hungry != 2) {
 				p_ptr->warning_hungry = 2;
@@ -3861,8 +3867,8 @@ bool set_food(int Ind, int v) {
 			}
 			break;
 
-			/* Hungry */
-			case 2:
+		/* Hungry */
+		case 2:
 			msg_print(Ind, "You are getting hungry.");
 			if (p_ptr->warning_hungry == 0) {
 				p_ptr->warning_hungry = 1;
@@ -3880,13 +3886,13 @@ bool set_food(int Ind, int v) {
 			}
 			break;
 
-			/* Normal */
-			case 3:
+		/* Normal */
+		case 3:
 			msg_print(Ind, "You are no longer full.");
 			break;
 
-			/* Full */
-			case 4:
+		/* Full */
+		case 4:
 			msg_print(Ind, "You are no longer gorged.");
 			break;
 		}
@@ -4096,6 +4102,8 @@ void shape_Maia_skills(int Ind) {
 			do_Maia_skill2(Ind, SKILL_AXE, 0, (750 * 13) / 10); //swap with Blunt (and get buffed then canonically further down)
 			do_Maia_skill2(Ind, SKILL_SWORD, 0, (750 * 11) / 10); //x1.1 arbitrary buff, sort of as a MA x1.3 buff replacement
 			//Note: SKILL_POLEARM just falls through, kept at usual 0.750
+
+			do_Maia_skill2(Ind, SKILL_DUAL, 1000, 0);
 
 			p_ptr->s_info[SKILL_BLOOD_MAGIC].dev = TRUE; //expand Blood Magic, to ensure the player notices it on the skill chart
 			do_Maia_skill2(Ind, SKILL_TRAUMATURGY, 0, (1500 * 7) / 10 * 3);
@@ -4423,6 +4431,18 @@ void check_experience(int Ind) {
 		if (p_ptr->lev > p_ptr->max_plv) {
 			p_ptr->max_plv = p_ptr->lev;
 
+#ifdef IDDC_LEVELUP_RESTORES_STAT
+			/* IDDC special buff: Regain a random drained attribute. */
+			if (in_irondeepdive(&p_ptr->wpos)) {
+				int s, drained_attrs = 0, drained_attr[6];
+
+				for (s = 0; s < 6; s++)
+					if (p_ptr->stat_cur[s] != p_ptr->stat_max[s])
+						drained_attr[drained_attrs++] = s;
+				if (drained_attrs) res_stat(Ind, drained_attr[rand_int(drained_attrs)]);
+			}
+#endif
+
 			/* gain skill points */
 #ifdef KINGCAP_EXP
 			/* min cap level is 50. check how far this
@@ -4711,9 +4731,9 @@ void check_experience(int Ind) {
 		if (old_lev < 5 && p_ptr->lev >= 5) msg_print(Ind, "\374\377GYou learn to telepathically sense dragons!");
 #ifndef ENABLE_DRACONIAN_TRAITS
 		if (old_lev < 10 && p_ptr->lev >= 10) msg_print(Ind, "\374\377GYou become more resistant to fire!");
-		if (old_lev < 15 && p_ptr->lev >= 15) msg_print(Ind, "\374\377GYou become more resistant to frost!");
+		if (old_lev < 15 && p_ptr->lev >= 15) msg_print(Ind, "\374\377GYou become more resistant to cold!");
 		if (old_lev < 20 && p_ptr->lev >= 20) msg_print(Ind, "\374\377GYou become more resistant to acid!");
-		if (old_lev < 25 && p_ptr->lev >= 25) msg_print(Ind, "\374\377GYou become more resistant to lightning!");
+		if (old_lev < 25 && p_ptr->lev >= 25) msg_print(Ind, "\374\377GYou become more resistant to electricity!");
 #else
 		if (old_lev < 8 && p_ptr->lev >= 8) msg_print(Ind, "\374\377GYou learn how to breathe an element!");
 		switch (p_ptr->ptrait) {
@@ -4724,7 +4744,7 @@ void check_experience(int Ind) {
 			break;
 		case TRAIT_WHITE: /* Draconic White */
 			if (old_lev < 15 && p_ptr->lev >= 15) msg_print(Ind, "\374\377GYou are enveloped by freezing air!");
-			if (old_lev < 25 && p_ptr->lev >= 25) msg_print(Ind, "\374\377GYou no longer fear frost!");
+			if (old_lev < 25 && p_ptr->lev >= 25) msg_print(Ind, "\374\377GYou no longer fear cold!");
 			break;
 		case TRAIT_RED: /* Draconic Red */
 			if (old_lev < 25 && p_ptr->lev >= 25) msg_print(Ind, "\374\377GYou no longer fear fire!");
@@ -4737,7 +4757,7 @@ void check_experience(int Ind) {
 			break;
 		case TRAIT_MULTI: /* Draconic Multi-hued */
 			if (old_lev < 5 && p_ptr->lev >= 5) msg_print(Ind, "\374\377GYou develop intrinsic resistance to electricity!");
-			if (old_lev < 10 && p_ptr->lev >= 10) msg_print(Ind, "\374\377GYou develop intrinsic resistance to frost!");
+			if (old_lev < 10 && p_ptr->lev >= 10) msg_print(Ind, "\374\377GYou develop intrinsic resistance to cold!");
 			if (old_lev < 15 && p_ptr->lev >= 15) msg_print(Ind, "\374\377GYou develop intrinsic resistance to fire!");
 			if (old_lev < 20 && p_ptr->lev >= 20) msg_print(Ind, "\374\377GYou develop intrinsic resistance to acid!");
 			if (old_lev < 25 && p_ptr->lev >= 25) msg_print(Ind, "\374\377GYou develop intrinsic resistance to poison!");
@@ -4751,7 +4771,7 @@ void check_experience(int Ind) {
 			if (old_lev < 20 && p_ptr->lev >= 20) msg_print(Ind, "\374\377GYour scales have grown metallic enough to reflect attacks!");
 			break;
 		case TRAIT_SILVER: /* Draconic Silver */
-			if (old_lev < 5 && p_ptr->lev >= 5) msg_print(Ind, "\374\377GYou develop intrinsic resistance to frost!");
+			if (old_lev < 5 && p_ptr->lev >= 5) msg_print(Ind, "\374\377GYou develop intrinsic resistance to cold!");
 			if (old_lev < 10 && p_ptr->lev >= 10) msg_print(Ind, "\374\377GYou develop intrinsic resistance to acid!");
 			if (old_lev < 15 && p_ptr->lev >= 15) msg_print(Ind, "\374\377GYou develop intrinsic resistance to poison!");
 			if (old_lev < 20 && p_ptr->lev >= 20) msg_print(Ind, "\374\377GYour scales have grown metallic enough to reflect attacks!");
@@ -4869,7 +4889,7 @@ void check_experience(int Ind) {
 			//todo maybe?: aura msgs
 			switch (p_ptr->ptrait) {
 			case TRAIT_ENLIGHTENED:
-				msg_print(Ind, "\374\377GYou become intrinsically resistant to poison, lightning and frost!");
+				msg_print(Ind, "\374\377GYou become intrinsically resistant to poison, electricity and cold!");
 				msg_print(Ind, "\374\377GYou gain intrinsic levitation powers.");
 				break;
 			case TRAIT_CORRUPTED:
@@ -5494,7 +5514,11 @@ bool monster_death(int Ind, int m_idx) {
 
 	bool henc_cheezed = FALSE, pvp = ((p_ptr->mode & MODE_PVP) != 0);
 	u32b resf_drops = make_resf(p_ptr), resf_chosen = resf_drops;
+	bool in_iddc;
 
+
+	/* Avoid getting projected on by smash effect of our own dropped potions */
+	m_ptr->dead = TRUE;
 
 	/* experimental: Zu-Aon drops only randarts */
 	if (is_ZuAon || r_idx == RI_BAD_LUCK_BAT)
@@ -5504,7 +5528,9 @@ bool monster_death(int Ind, int m_idx) {
 
 	/* terminate mindcrafter charm effect */
 	if (m_ptr->charmedignore) {
-		Players[m_ptr->charmedignore]->mcharming--;
+		int Ind = find_player(m_ptr->charmedignore);
+
+		if (Ind) Players[Ind]->mcharming--;
 		m_ptr->charmedignore = 0;
 	}
 
@@ -5547,6 +5573,7 @@ bool monster_death(int Ind, int m_idx) {
 	y = m_ptr->fy;
 	x = m_ptr->fx;
 	wpos = &m_ptr->wpos;
+	in_iddc = in_irondeepdive(wpos);
 	if (!(zcave = getcave(wpos))) return FALSE;
 
 	if (ge_special_sector && /* training tower event running? and we are there? */
@@ -5733,7 +5760,7 @@ bool monster_death(int Ind, int m_idx) {
 	/* Log-scumming in IDDC is like fighting clones */
 	if (p_ptr->IDDC_logscum) return FALSE;
 	/* enforce dedicated Ironman Deep Dive Challenge character slot usage */
-	if ((p_ptr->mode & MODE_DED_IDDC) && !in_irondeepdive(&p_ptr->wpos)
+	if ((p_ptr->mode & MODE_DED_IDDC) && !in_iddc
 	    && r_ptr->mexp) /* Allow kills in Bree */
 		return FALSE;
 	/* clones don't drop treasure or complete quests.. */
@@ -5898,7 +5925,12 @@ bool monster_death(int Ind, int m_idx) {
 		case 539: //slinger have FRIENDS
 			resf_drops |= RESF_COND_SLING;
 			break;
-		/* -- only do flexible vs tough armour choice for the remaining monsters here -- */
+		/* specialty: Saruman - avoid duplicate mage staff drop */
+		case 771:
+			/* the dedicated +10 mstaff is not for farming! */
+			if (!(resf_chosen & RESF_NOTRUEART)) resf_drops |= RESF_CONDF_NOMSTAFF;
+			break;
+		/* -- for the remaining monsters here, only do 'flexible vs tough armour' choice -- */
 		default:
 			switch (r_idx) {
 			/* monsters that don't fall into the usual colouring scheme */
@@ -6039,6 +6071,114 @@ bool monster_death(int Ind, int m_idx) {
 		}
 	}
 
+#ifdef ENABLE_EXCAVATION
+	/* Possibly drop ingredients: Saltpeter (guano), Ammonia salt (from both, dung and poison/gas breathers), Sulfur (fire dragons), Vitriol (Acid breathers) */
+ #ifdef EXCAVATION_IDDC_ONLY
+    if (in_iddc)
+ #endif
+    {
+	bool found_chemical = FALSE;
+
+	if ((r_ptr->flags4 & RF4_BR_FIRE) && r_ptr->weight >= 4000 && !p_ptr->IDDC_logscum) { // Dragon-league basically
+		if (get_skill(p_ptr, SKILL_DIG) >= 5 && rand_int(7) < r_ptr->weight / 1000) {
+			object_type forge;
+
+			invcopy(&forge, lookup_kind(TV_CHEMICAL, SV_SULFUR));
+			s_printf("CHEMICAL: %s found sulfur (kill).\n", p_ptr->name);
+			forge.owner = p_ptr->id;
+			forge.mode = p_ptr->mode;
+			forge.iron_trade = p_ptr->iron_trade;
+			forge.iron_turn = turn;
+			forge.level = 0;
+			forge.number = 1 + rand_int(r_ptr->weight / 30000);
+			forge.weight = k_info[forge.k_idx].weight;
+			forge.marked2 = ITEM_REMOVAL_NORMAL;
+			drop_near(0, &forge, -1, wpos, y, x);
+			found_chemical = TRUE;
+		}
+	}
+	if ((r_ptr->flags4 & RF4_BR_ACID) && r_ptr->weight >= 4000 && !p_ptr->IDDC_logscum) { // Dragon-league basically
+		if (get_skill(p_ptr, SKILL_DIG) >= 15 && rand_int(7) < r_ptr->weight / 1000) {
+			object_type forge;
+
+			invcopy(&forge, lookup_kind(TV_CHEMICAL, SV_VITRIOL));
+			s_printf("CHEMICAL: %s found vitriol (kill).\n", p_ptr->name);
+			forge.owner = p_ptr->id;
+			forge.mode = p_ptr->mode;
+			forge.iron_trade = p_ptr->iron_trade;
+			forge.iron_turn = turn;
+			forge.level = 0;
+			forge.number = 1 + rand_int(r_ptr->weight / 30000);
+			forge.weight = k_info[forge.k_idx].weight;
+			forge.marked2 = ITEM_REMOVAL_NORMAL;
+			drop_near(0, &forge, -1, wpos, y, x);
+			found_chemical = TRUE;
+		}
+	}
+	if ((r_ptr->flags4 & RF4_BR_POIS) && r_ptr->weight >= 4000 && !p_ptr->IDDC_logscum) { // Dragon-league basically
+		if (get_skill(p_ptr, SKILL_DIG) >= 10 && rand_int(7) < r_ptr->weight / 1000) {
+			object_type forge;
+
+			invcopy(&forge, lookup_kind(TV_CHEMICAL, SV_AMMONIA_SALT));
+			s_printf("CHEMICAL: %s found ammonia salt (kill).\n", p_ptr->name);
+			forge.owner = p_ptr->id;
+			forge.mode = p_ptr->mode;
+			forge.iron_trade = p_ptr->iron_trade;
+			forge.iron_turn = turn;
+			forge.level = 0;
+			forge.number = 1 + rand_int(r_ptr->weight / 30000);
+			forge.weight = k_info[forge.k_idx].weight;
+			forge.marked2 = ITEM_REMOVAL_NORMAL;
+			drop_near(0, &forge, -1, wpos, y, x);
+			found_chemical = TRUE;
+		}
+	}
+	if (!found_chemical && (r_ptr->flags3 & RF3_ANIMAL) && !(r_ptr->flags3 & (RF3_DEMON | RF3_UNDEAD | RF3_NONLIVING)) && !(r_ptr->flags7 & RF7_AQUATIC) && !p_ptr->IDDC_logscum) {
+		/* Avoid item flood */
+		if (!(r_ptr->flags1 & RF1_FRIENDS) || !rand_int(2)) {
+			/* Saltpetre (guano: bats/birds) */
+			if (r_ptr->d_char == 'b' || r_ptr->d_char == 'B' || r_ptr->d_char == 'H') {
+				if (get_skill(p_ptr, SKILL_DIG) >= 5 && !rand_int(3)) {
+					object_type forge;
+
+					invcopy(&forge, lookup_kind(TV_CHEMICAL, SV_SALTPETRE));
+					s_printf("CHEMICAL: %s found saltpetre (kill).\n", p_ptr->name);
+					forge.owner = p_ptr->id;
+					forge.mode = p_ptr->mode;
+					forge.iron_trade = p_ptr->iron_trade;
+					forge.iron_turn = turn;
+					forge.level = 0;
+					forge.number = 1 + rand_int(r_ptr->weight / 2000);
+					forge.weight = k_info[forge.k_idx].weight;
+					forge.marked2 = ITEM_REMOVAL_NORMAL;
+					drop_near(0, &forge, -1, wpos, y, x);
+					found_chemical = TRUE;
+				}
+			}
+			/* Ammonia Salt (dung: whatever has hooves..) */
+			else if (r_ptr->d_char == 'q' || r_ptr->d_char == 'C' || r_ptr->d_char == 'M' || r_ptr->d_char == 'Y') {
+				if (get_skill(p_ptr, SKILL_DIG) >= 5 && !rand_int(3)) {
+					object_type forge;
+
+					invcopy(&forge, lookup_kind(TV_CHEMICAL, SV_AMMONIA_SALT));
+					s_printf("CHEMICAL: %s found ammonia salt (kill).\n", p_ptr->name);
+					forge.owner = p_ptr->id;
+					forge.mode = p_ptr->mode;
+					forge.iron_trade = p_ptr->iron_trade;
+					forge.iron_turn = turn;
+					forge.level = 0;
+					forge.number = 1 + rand_int(r_ptr->weight / 2000);
+					forge.weight = k_info[forge.k_idx].weight;
+					forge.marked2 = ITEM_REMOVAL_NORMAL;
+					drop_near(0, &forge, -1, wpos, y, x);
+					found_chemical = TRUE;
+				}
+			}
+		}
+	}
+    }
+#endif
+
 	/* Forget it */
 	unique_quark = 0;
 
@@ -6117,7 +6257,7 @@ bool monster_death(int Ind, int m_idx) {
 			int before = p_ptr->r_mimicry[credit_idx];
 
 			/* get +1 bonus credit in Ironman Deep Dive Challenge */
-			if (in_irondeepdive(wpos))
+			if (in_iddc)
 #ifndef IDDC_MIMICRY_BOOST
 				p_ptr->r_mimicry[credit_idx]++;
 #else /* give a possibly greater boost than just +1 */
@@ -6184,10 +6324,12 @@ bool monster_death(int Ind, int m_idx) {
 		player_type *p_ptr2 = NULL;
 
 #ifdef MUCHO_RUMOURS
+ #if 0 /* disabled, since the unique diz is actually displayed, sorriez :/ (the day/night one is still active tho!) */
 		/*the_sandman prints a rumour */
 		/* print the same message other players get before it - mikaelh */
 		msg_print(Ind, "Suddenly a thought comes to your mind:");
-		fortune(Ind, TRUE);
+		fortune(Ind, 2);
+ #endif
 #endif
 
 		/* give credit to the killer by default */
@@ -6203,7 +6345,7 @@ if (cfg.unikill_format) {
 #endif
 		else if ((r_ptr->flags0 & RF0_FINAL_GUARDIAN)) {
 #ifdef IDDC_BOSS_COL
-			if (in_irondeepdive(wpos)) snprintf(buf, sizeof(buf), "\374\377D**\377c%s was slain by %s %s.\377D**", r_name_get(m_ptr), titlebuf, p_ptr->name);
+			if (in_iddc) snprintf(buf, sizeof(buf), "\374\377D**\377c%s was slain by %s %s.\377D**", r_name_get(m_ptr), titlebuf, p_ptr->name);
 			else
 #endif
 			snprintf(buf, sizeof(buf), "\374\377U**\377c%s was slain by %s %s.\377U**", r_name_get(m_ptr), titlebuf, p_ptr->name);
@@ -6222,7 +6364,7 @@ if (cfg.unikill_format) {
 #endif
 			else if ((r_ptr->flags0 & RF0_FINAL_GUARDIAN)) {
 #ifdef IDDC_BOSS_COL
-				if (in_irondeepdive(wpos)) snprintf(buf, sizeof(buf), "\374\377D**\377c%s was slain by %s.\377D**", r_name_get(m_ptr), p_ptr->name);
+				if (in_iddc) snprintf(buf, sizeof(buf), "\374\377D**\377c%s was slain by %s.\377D**", r_name_get(m_ptr), p_ptr->name);
 				else
 #endif
 				snprintf(buf, sizeof(buf), "\374\377U**\377c%s was slain by %s.\377U**", r_name_get(m_ptr), p_ptr->name);
@@ -6237,7 +6379,7 @@ if (cfg.unikill_format) {
 #endif
 			else if ((r_ptr->flags0 & RF0_FINAL_GUARDIAN)) {
 #ifdef IDDC_BOSS_COL
-				if (in_irondeepdive(wpos)) snprintf(buf, sizeof(buf), "\374\377D**\377c%s was slain by fusion %s-%s.\377D**", r_name_get(m_ptr), p_ptr->name, p_ptr2->name);
+				if (in_iddc) snprintf(buf, sizeof(buf), "\374\377D**\377c%s was slain by fusion %s-%s.\377D**", r_name_get(m_ptr), p_ptr->name, p_ptr2->name);
 				else
 #endif
 				snprintf(buf, sizeof(buf), "\374\377U**\377c%s was slain by fusion %s-%s.\377U**", r_name_get(m_ptr), p_ptr->name, p_ptr2->name);
@@ -6259,7 +6401,7 @@ if (cfg.unikill_format) {
 #endif
 					else if ((r_ptr->flags0 & RF0_FINAL_GUARDIAN)) {
 #ifdef IDDC_BOSS_COL
-						if (in_irondeepdive(wpos)) snprintf(buf, sizeof(buf), "\374\377D**\377c%s was slain by %s of %s.\377D**", r_name_get(m_ptr), p_ptr->name, parties[p_ptr->party].name);
+						if (in_iddc) snprintf(buf, sizeof(buf), "\374\377D**\377c%s was slain by %s of %s.\377D**", r_name_get(m_ptr), p_ptr->name, parties[p_ptr->party].name);
 						else
 #endif
 						snprintf(buf, sizeof(buf), "\374\377U**\377c%s was slain by %s of %s.\377U**", r_name_get(m_ptr), p_ptr->name, parties[p_ptr->party].name);
@@ -6307,7 +6449,8 @@ if (cfg.unikill_format) {
 		}
 
 		/* Log superunique kills to its own file */
-		if (is_ZuAon || (!is_Sauron && !is_Morgoth && !(r_ptr->flags0 & RF0_FINAL_GUARDIAN) && r_ptr->level >= 98)) //<-note: The Living Lightning is considered to be just a 'normal' dungeon boss
+		/* The Living Lightning is considered to be just a 'normal' dungeon boss. What about Bahamut? */
+		if (is_ZuAon || (!is_Sauron && !is_Morgoth && !(r_ptr->flags0 & RF0_FINAL_GUARDIAN) && r_ptr->level >= 98))
 			su_print(format("%s was slain by %s.\n", r_name_get(m_ptr), p_ptr->name));
 	}
 
@@ -6347,7 +6490,7 @@ if (cfg.unikill_format) {
 		}
 
 		/* for The One Ring.. */
-		if (in_irondeepdive(wpos)) sauron_weakened_iddc = FALSE;
+		if (in_iddc) sauron_weakened_iddc = FALSE;
 		else sauron_weakened = FALSE;
 	}
 
@@ -6358,9 +6501,11 @@ if (cfg.unikill_format) {
 
 	/* Dungeon bosses often drop a dungeon-set true artifact (for now 1 in 3 chance) */
 	if ((r_ptr->flags0 & RF0_FINAL_GUARDIAN)) {
+		bool no_art = TRUE;
+
 		msg_format(Ind, "\374\377UYou have conquered %s!", d_name +
 #ifdef IRONDEEPDIVE_MIXED_TYPES
-		    d_info[in_irondeepdive(wpos) ? iddc[ABS(wpos->wz)].type : d_ptr->type].name
+		    d_info[in_iddc ? iddc[ABS(wpos->wz)].type : d_ptr->type].name
 #else
 		    d_info[d_ptr->type].name
 #endif
@@ -6368,16 +6513,17 @@ if (cfg.unikill_format) {
 		/* Dungeon-boss-slain music if available client-side */
 		if (!is_Sauron && !is_Morgoth && !is_ZuAon) Send_music(Ind, 90, -2);
 
+		/* Drop final artifact? */
 		if ((
 #ifdef IRONDEEPDIVE_MIXED_TYPES
-		    in_irondeepdive(wpos) ? (a_idx = d_info[iddc[ABS(wpos->wz)].type].final_artifact) :
+		    in_iddc ? (a_idx = d_info[iddc[ABS(wpos->wz)].type].final_artifact) :
 #endif
 		    (a_idx = d_info[d_ptr->type].final_artifact))
 		    /* hack: 0 rarity = always generate -- for Ring of Phasing! */
 
 		    && (
 #ifdef IRONDEEPDIVE_MIXED_TYPES
-		    in_irondeepdive(wpos) || //Let's reward those brave IDDC participants?
+		    in_iddc || //Let's reward those brave IDDC participants?
 #endif
 		    (!a_info[a_idx].rarity || !rand_int(3)))
 
@@ -6451,18 +6597,44 @@ if (cfg.unikill_format) {
 #endif
 				drop_near(0, qq_ptr, -1, wpos, y, x);
 				s_printf("..dropped.\n");
-			} else  s_printf("..failed.\n");
-		} else if (
+				no_art = FALSE;
+			} else s_printf("..failed.\n");
+		}
+		/* If a dungeon boss doesn't have or drop an artifact, drop a stat potion! (Spider) */
+		if (no_art) {
+			qq_ptr = &forge;
+			object_wipe(qq_ptr);
+			switch (rand_int(6)) {
+			case 0: i = SV_POTION_INC_STR; break;
+			case 1: i = SV_POTION_INC_INT; break;
+			case 2: i = SV_POTION_INC_WIS; break;
+			case 3: i = SV_POTION_INC_DEX; break;
+			case 4: i = SV_POTION_INC_CON; break;
+			case 5: i = SV_POTION_INC_CHR; break;
+			}
+			invcopy(qq_ptr, lookup_kind(TV_POTION, i));
+			s_printf("replacement for FINAL_ARTIFACT: %d\n", i);
+			apply_magic(wpos, qq_ptr, -2, FALSE, TRUE, FALSE, FALSE, RESF_NONE);
+			drop_near(0, qq_ptr, -1, wpos, y, x);
+		}
+		/* Drop final object? */
+		if (
 #ifdef IRONDEEPDIVE_MIXED_TYPES
-		    in_irondeepdive(wpos) ? (I_kind = d_info[iddc[ABS(wpos->wz)].type].final_object) :
+		    in_iddc ? (I_kind = d_info[iddc[ABS(wpos->wz)].type].final_object) :
 #endif
 		    (I_kind = d_info[d_ptr->type].final_object)) {
 			s_printf("preparing FINAL_OBJECT %d", I_kind);
 			qq_ptr = &forge;
 			object_wipe(qq_ptr);
+			/* Using real k-indices is bad, because k_idx differs from actual numbers in k_info.txt, so it's unpredictable -> unusable */
+#if 1
+			/* For that reason, actually take this more flexible approach anyway: Specify a tval instead */
+			get_obj_num_hook = NULL;
+			get_obj_num_prep_tval(I_kind, resf_chosen); //treat the object-index as a tval instead
+			I_kind = get_obj_num(25 + getlevel(wpos), resf_chosen); //get a random, boosted-depth sval just like for normal loot
+#endif
 			/* Create the object */
-			invcopy(qq_ptr, I_kind + 1); /* weirdness, why is it actually 1 too low? */
-
+			invcopy(qq_ptr, I_kind); /* this can be totally off of k_info idx values, so it's unusable practically */
 			/* Complete generation, especially level requirements check */
 			apply_magic(wpos, qq_ptr, -2, FALSE, TRUE, FALSE, FALSE, resf_chosen);
 
@@ -6551,14 +6723,14 @@ if (cfg.unikill_format) {
 
 					/* Set all his artifacts to double-speed timeout */
 					for (j = 0; j < INVEN_TOTAL; j++)
-						if (p_ptr->inventory[j].name1 &&
-						    p_ptr->inventory[j].name1 != ART_RANDART
+						if (q_ptr->inventory[j].name1 &&
+						    q_ptr->inventory[j].name1 != ART_RANDART
 #ifdef L100_ARTS_LAST
-						    && p_ptr->inventory[j].name1 != ART_POWER
-						    && p_ptr->inventory[j].name1 != ART_BLADETURNER
+						    && q_ptr->inventory[j].name1 != ART_POWER
+						    && q_ptr->inventory[j].name1 != ART_BLADETURNER
 #endif
 						    )
-							a_info[p_ptr->inventory[j].name1].winner = TRUE;
+							a_info[q_ptr->inventory[j].name1].winner = TRUE;
 
 					/* Set his retire_timer if neccecary */
 					if (cfg.retire_timer >= 0) {
@@ -6603,7 +6775,7 @@ if (cfg.unikill_format) {
 			apply_magic(wpos, &prize, -1, TRUE, TRUE, TRUE, FALSE, resf_chosen);
 
 			prize.number = num;
-			prize.level = 45;
+			prize.level = 40;
 			prize.note = local_quark;
 			prize.note_utag = strlen(quark_str(local_quark));
 
@@ -6620,7 +6792,7 @@ if (cfg.unikill_format) {
 			apply_magic(wpos, &prize, -1, TRUE, TRUE, TRUE, FALSE, resf_chosen);
 
 			prize.number = num;
-			prize.level = 45;
+			prize.level = 40;
 			prize.note = local_quark;
 			prize.note_utag = strlen(quark_str(local_quark));
 
@@ -6678,7 +6850,7 @@ if (cfg.unikill_format) {
 			qq_ptr->number = 1;
 			qq_ptr->note = local_quark;
 			qq_ptr->note_utag = strlen(quark_str(local_quark));
-			apply_magic(wpos, qq_ptr, -1, TRUE, TRUE, TRUE, TRUE, resf_drops);
+			apply_magic(wpos, qq_ptr, -1, TRUE, TRUE, TRUE, TRUE, resf_chosen);
 			drop_near(0, qq_ptr, -1, wpos, y, x);
 
 		} else if (r_ptr->flags7 & RF7_NAZGUL) {
@@ -6810,8 +6982,8 @@ if (cfg.unikill_format) {
 					break;
 			}
 			get_obj_num_hook = NULL;
-			get_obj_num_prep_tval(tv, resf_drops | RESF_STOREFLAT); //Hack: Make all item sub-types equally probable, for more chances to get non-boring base types.
-			k_idx = get_obj_num(m_ptr->level, resf_drops | RESF_STOREFLAT); //Hack: We ignore floor depth, taking only the monster level into account, hehe.
+			get_obj_num_prep_tval(tv, resf_chosen | RESF_STOREFLAT); //Hack: Make all item sub-types equally probable, for more chances to get non-boring base types.
+			k_idx = get_obj_num(m_ptr->level, resf_chosen | RESF_STOREFLAT); //Hack: We ignore floor depth, taking only the monster level into account, hehe.
 			invcopy(qq_ptr, k_idx);
 
 			/* Megahack -- specify the ego */
@@ -6857,7 +7029,7 @@ if (cfg.unikill_format) {
 		/* For DK/HK: Let these guys drop some heavily cursed trueart for itemization fun.. */
 		} else if ((strstr((r_name + r_ptr->name),"Vlad Dracula") || strstr((r_name + r_ptr->name),"Mephistopheles"))
  #ifndef TEST_SERVER
-		    && !(resf_drops & RESF_NOTRUEART)
+		    && !(resf_chosen & RESF_NOTRUEART)
  #endif
 		    ) {
 			char o_name[ONAME_LEN];
@@ -6909,7 +7081,7 @@ if (cfg.unikill_format) {
 				handle_art_inum(qq_ptr->name1);
 				qq_ptr->note = local_quark;
 				qq_ptr->note_utag = strlen(quark_str(local_quark));
-				apply_magic(wpos, qq_ptr, -1, TRUE, TRUE, TRUE, FALSE, resf_drops);
+				apply_magic(wpos, qq_ptr, -1, TRUE, TRUE, TRUE, FALSE, resf_chosen);
 
  #ifdef PRE_OWN_DROP_CHOSEN
 				qq_ptr->level = 0;
@@ -7168,29 +7340,32 @@ if (cfg.unikill_format) {
 				a_idx = ART_MARDRA;
 				chance = 55;
 			} else if (strstr((r_name + r_ptr->name), "Saruman of Many Colours")) {
-				a_idx = ART_ELENDIL;
-				chance = 30;
+				/* Idea here: The alternative +10 mstaff is not for getting farmed by winners */
+				if (!(resf_chosen & RESF_NOTRUEART)) {
+					a_idx = ART_ELENDIL;
+					chance = 30;
 
-				/* If Elendil drop fails, go for a top mage staff instead */
-				if (magik(chance) && !cfg.arts_disabled && (a_info[a_idx].cur_num == 0)) chance = 100;
-				else {
-					a_idx = 0;
+					/* If Elendil drop fails, go for a top mage staff instead */
+					if (magik(chance) && !cfg.arts_disabled && (a_info[a_idx].cur_num == 0)) chance = 100;
+					else {
+						a_idx = 0;
 
-					/* Mage staff drop - added after treasure classes were fixed. */
-					qq_ptr = &forge;
-					object_wipe(qq_ptr);
-					invcopy(qq_ptr, lookup_kind(TV_MSTAFF, SV_MSTAFF));
-					qq_ptr->number = 1;
-					qq_ptr->note = local_quark;
-					qq_ptr->note_utag = strlen(quark_str(local_quark));
-					apply_magic(wpos, qq_ptr, -1, TRUE, TRUE, TRUE, TRUE, resf_drops);
-					/* hack ego power if not art already */
-					if (!qq_ptr->name1) {
-						qq_ptr->name2 = EGO_MWIZARDRY;
-						qq_ptr->pval = 10;
-						determine_level_req(object_level, qq_ptr);
+						/* Mage staff drop - added after treasure classes were fixed. */
+						qq_ptr = &forge;
+						object_wipe(qq_ptr);
+						invcopy(qq_ptr, lookup_kind(TV_MSTAFF, SV_MSTAFF));
+						qq_ptr->number = 1;
+						qq_ptr->note = local_quark;
+						qq_ptr->note_utag = strlen(quark_str(local_quark));
+						apply_magic(wpos, qq_ptr, -1, TRUE, TRUE, TRUE, TRUE, resf_chosen);
+						/* hack ego power if not art already */
+						if (!qq_ptr->name1) {
+							qq_ptr->name2 = EGO_MWIZARDRY;
+							qq_ptr->pval = 10;
+							determine_level_req(object_level, qq_ptr);
+						}
+						drop_near(0, qq_ptr, -1, wpos, y, x);
 					}
-					drop_near(0, qq_ptr, -1, wpos, y, x);
 				}
 			} else if (strstr((r_name + r_ptr->name), "Gorlim, Betrayer of Barahir")) {
 				a_idx = ART_GORLIM;
@@ -7682,6 +7857,7 @@ static void erase_player(int Ind, int death_type, bool static_floor) {
 	player_type *p_ptr = Players[Ind];
 	char buf[1024];
 	int i;
+	int *id_list, ids;
 
 	//ACC_HOUSE_LIMIT
 	i = acc_get_houses(p_ptr->accountname);
@@ -7740,6 +7916,33 @@ static void erase_player(int Ind, int death_type, bool static_floor) {
 	}
 	if (i == MAX_RESERVED_NAMES)
 		s_printf("Warning: Couldn't reserve character name '%s' for account '%s'!\n", p_ptr->name, p_ptr->accountname);
+
+	/* Slide all his characters of greater order if required, to not generate order 'holes'. */
+	ids = player_id_list(&id_list, p_ptr->account);
+	if (!ids) msg_print(Ind, "ERROR (erase_player())."); /* paranoia */
+	else {
+		int o = lookup_player_order(p_ptr->id), o2;
+		bool found = FALSE;
+
+		/* First, check if this character was the only one of his particular order weight */
+		for (i = 0; i < ids; i++) {
+			if (id_list[i] == p_ptr->id) continue; /* Skip this character */
+			if (lookup_player_order(id_list[i]) == o) {
+				found = TRUE;
+				break;
+			}
+		}
+		/* If we were unique in our order weight, slide all that come below us up by one */
+		if (!found) {
+			for (i = 0; i < ids; i++) {
+				if (id_list[i] == p_ptr->id) continue; /* Skip this character */
+				o2 = lookup_player_order(id_list[i]);
+				if (o2 > o) set_player_order(id_list[i], o2 - 1);
+			}
+		}
+		C_KILL(id_list, ids, int);
+	}
+
 
 	/* Remove him from the player name database */
 	delete_player_name(p_ptr->name);
@@ -7838,6 +8041,11 @@ static void equip_death_damage(int Ind, int verbose) {
 		o_ptr = &p_ptr->inventory[j];
 		if (!o_ptr->k_idx) continue;
 
+		/* Maybe to think about:
+		   Should ammo and tool be treated at less probability so they aren't just extra
+		   slots to be filled with junk just to reduce chances of other items getting picked?
+		   For ranged chars with art ammo the slot might be vital though. */
+
 		if (magik(DEATH_EQ_ITEM_LOST)) {
 			object_desc(Ind, o_name, o_ptr, TRUE, 3);
 			s_printf("item_lost: %s (slot %d)\n", o_name, j);
@@ -7934,7 +8142,9 @@ static void display_diz_death(int Ind) {
   changed so when leader ghosts perish the team is disbanded
   -APD-
  */
-
+/* Special message for deaths by Farmer Maggot's dogs?
+   %-chance to get displayed, otherwise the usual last_words from death.txt is shown. */
+#define WHO_LET_THE_DOGS_OUT 100
 void player_death(int Ind) {
 	player_type *p_ptr = Players[Ind], *p_ptr2 = NULL;
 	int Ind2;
@@ -8084,12 +8294,12 @@ void player_death(int Ind) {
 			deep_dive_level[i] = ABS(p_ptr->wpos.wz);
 			//strcpy(deep_dive_name[i], p_ptr->name);
 #ifdef IDDC_HISCORE_SHOWS_ICON
-			sprintf(deep_dive_name[i], "%s, %s %s (\\{%c%c\\{s/\\{%c%d\\{s),",
-			    p_ptr->name, get_prace(p_ptr), class_info[p_ptr->pclass].title, color_attr_to_char(p_ptr->cp_ptr->color), p_ptr->fruit_bat ? 'b' : '@',
+			sprintf(deep_dive_name[i], "%s, %s%s (\\{%c%c\\{s/\\{%c%d\\{s),",
+			    p_ptr->name, get_prace2(p_ptr), class_info[p_ptr->pclass].title, color_attr_to_char(p_ptr->cp_ptr->color), p_ptr->fruit_bat ? 'b' : '@',
 			    p_ptr->ghost ? 'r' : 's', p_ptr->max_plv);
 #else
-			sprintf(deep_dive_name[i], "%s, %s %s (\\{%c%d\\{s),",
-			    p_ptr->name, get_prace(p_ptr), class_info[p_ptr->pclass].title,
+			sprintf(deep_dive_name[i], "%s, %s%s (\\{%c%d\\{s),",
+			    p_ptr->name, get_prace2(p_ptr), class_info[p_ptr->pclass].title,
 			    p_ptr->ghost ? 'r' : 's', p_ptr->max_plv);
 #endif
 			strcpy(deep_dive_char[i], p_ptr->name);
@@ -8419,23 +8629,27 @@ void player_death(int Ind) {
 			msg_format(Ind, "\374\377RYou were defeated by %s, but the priests have saved you.", p_ptr->died_from);
 
 #if CHATTERBOX_LEVEL > 2
-			if (strstr(p_ptr->died_from, "Farmer Maggot's dog") && magik(50)) {
-				msg_broadcast(0, "Suddenly a thought comes to your mind:");
+ #ifdef WHO_LET_THE_DOGS_OUT
+			if (strstr(p_ptr->died_from, "Farmer Maggot's dog") && magik(WHO_LET_THE_DOGS_OUT)) {
+				//msg_broadcast(0, "Suddenly a thought comes to your mind:");
 				msg_broadcast(0, "Who let the dogs out?");
-			} else if (p_ptr->last_words) {
+			} else
+ #endif
+			/* Actually no last_words from death.txt for instant-resurrection-deaths? */
+			if (p_ptr->last_words) {
 				char death_message[80];
 
 				(void)get_rnd_line("death.txt", 0, death_message, 80);
 				msg_print(Ind, death_message);
 			}
-#endif	// CHATTERBOX_LEVEL
-
-#ifdef RACE_DIZ
-			display_diz_death(Ind);
 #endif
 
 			/* new - death dump for insta-res too! */
 			Send_chardump(Ind, "-death");
+
+#ifdef RACE_DIZ
+			display_diz_death(Ind);
+#endif
 
 			/* Hm, this doesn't need to be on the char dump actually */
 			msg_format(Ind, "\377oThey have requested a fee of %d gold pieces.", instant_res_cost);
@@ -8743,7 +8957,7 @@ void player_death(int Ind) {
 	/* Sort the player's inventory according to value */
 	ang_sort(Ind, p_ptr->inventory, NULL, INVEN_TOTAL);
 
-	/* Starting with the most valuable, drop things one by one */
+	/* Starting with the most valuable, drop things one by one. */
 	for (i = 0; i < INVEN_TOTAL; i++) {
 		bool away = FALSE;
 
@@ -8759,6 +8973,7 @@ void player_death(int Ind) {
 		/* Eat all true artifacts of Soloists */
 		if ((p_ptr->mode & MODE_SOLO) && true_artifact_p(o_ptr)) {
 			handle_art_d(o_ptr->name1);
+			questitem_d(o_ptr, o_ptr->number);
 			continue;
 		}
 
@@ -8768,20 +8983,21 @@ void player_death(int Ind) {
 		    p_ptr->inventory[i].name1 != ART_RANDART)
 			a_info[p_ptr->inventory[i].name1].winner = FALSE;
 
-		/* If we committed suicide, only drop artifacts */
-		//if (!p_ptr->alive && !artifact_p(o_ptr)) continue;
+		/* If we committed suicide.. */
 		if (!p_ptr->alive) {
-			if (!true_artifact_p(o_ptr)) continue;
+			/* only drop artifacts */
+			 if (!artifact_p(o_ptr)) {
+				questitem_d(o_ptr, o_ptr->number);
+				continue;
+			}
 
-			/* hack -- total winners do not drop artifacts when they suicide */
-			//if (!p_ptr->alive && p_ptr->total_winner && artifact_p(&p_ptr->inventory[i]))
-
-			/* Artifacts cannot be dropped after all */
-			/* Don't litter Valinor -- Ring of Phasing must be destroyed anyways */
-			if ((cfg.anti_arts_hoard) || in_valinor(&p_ptr->wpos)) {
+			/* and if we were a total winner, don't drop any true artifacts */
+			if (true_artifact_p(o_ptr) &&
+			    ((cfg.anti_arts_hoard && undepositable_artifact_p(o_ptr)) ||
+			    (p_ptr->total_winner && !winner_artifact_p(o_ptr) && cfg.kings_etiquette))) {
+				questitem_d(o_ptr, o_ptr->number);
 				/* set the artifact as unfound */
 				handle_art_d(o_ptr->name1);
-
 				/* Don't drop the artifact */
 				continue;
 			}
@@ -8801,36 +9017,67 @@ void player_death(int Ind) {
 			if (i >= INVEN_WIELD) reverse_cursed(o_ptr);
 #endif
 
+			/* Check if the item should get scattered far away randomly for some reason */
+			if (true_artifact_p(o_ptr)) {
+				cave_type **zcave;
+
+				if ((zcave = getcave(&p_ptr->wpos))) { /* this should never.. */
+					if (inside_house(&p_ptr->wpos, p_ptr->px, p_ptr->py)) away = TRUE; /* Not inside houses */
+					if ((zcave[p_ptr->py][p_ptr->px].info & CAVE_PROT) || (f_info[zcave[p_ptr->py][p_ptr->px].feat].flags1 & FF1_PROTECTED)) away = TRUE; /* Not inside inns.. */
+				}
+			}
 #ifdef DEATH_ITEM_SCATTER
 			/* Apply penalty of death */
-			if (!artifact_p(o_ptr) && magik(DEATH_ITEM_SCATTER))
-				away = TRUE;
-			else
+			else if (!artifact_p(o_ptr) && magik(DEATH_ITEM_SCATTER)) away = TRUE;
 #endif	/* DEATH_ITEM_SCATTER */
-			{
+
+			/* If the item isn't to be scattered, drop it here now */
+			if (!away) {
+				s16b res;
+
 				if (p_ptr->wpos.wz) o_ptr->marked2 = ITEM_REMOVAL_NEVER;
 				else if (istown(&p_ptr->wpos)) o_ptr->marked2 = ITEM_REMOVAL_DEATH_WILD;/* don't litter towns for long */
 				else o_ptr->marked2 = ITEM_REMOVAL_LONG_WILD;/* don't litter wilderness eternally ^^ */
+				/* Drop this one - if dropping fails for reasons that don't legitimately destroy the item, fallback to scattering it far away instead */
+				res = drop_near(0, o_ptr, 0, &p_ptr->wpos, p_ptr->py, p_ptr->px);
+				away = (res == -2);
+				/* Item failed to drop or get scattered and just gets eaten? Paranoia log */
+				if (res <= 0 && !away) {
+					char o_name[ONAME_LEN];
 
-				/* Drop this one */
-				away = (drop_near(0, o_ptr, 0, &p_ptr->wpos, p_ptr->py, p_ptr->px) <= 0);
+					object_desc(0, o_name, o_ptr, TRUE, 3);
+					s_printf("Death-cannot-drop_near %s\n", o_name);
+				}
 			}
 
 			if (away) {
 				int o_idx = 0, x1, y1, try = 500;
 				cave_type **zcave;
 
-				if ((zcave = getcave(&p_ptr->wpos))) /* this should never.. */
+				if ((zcave = getcave(&p_ptr->wpos))) { /* this should never.. */
 					while (o_idx <= 0 && try--) {
 						x1 = rand_int(p_ptr->cur_wid);
 						y1 = rand_int(p_ptr->cur_hgt);
 
-						if (!cave_clean_bold(zcave, y1, x1)) continue;
+						if (!cave_clean_bold(zcave, y1, x1)) continue; /* Must be floor */
+						if (true_artifact_p(o_ptr)) {
+							if (inside_house(&p_ptr->wpos, x1, y1)) continue; /* Not inside houses */
+							if ((zcave[y1][x1].info & CAVE_PROT) || (f_info[zcave[y1][x1].feat].flags1 & FF1_PROTECTED)) continue; /* Not inside inns.. */
+						}
+
 						if (p_ptr->wpos.wz) o_ptr->marked2 = ITEM_REMOVAL_NEVER;
 						else if (istown(&p_ptr->wpos)) o_ptr->marked2 = ITEM_REMOVAL_DEATH_WILD;/* don't litter towns for long */
 						else o_ptr->marked2 = ITEM_REMOVAL_LONG_WILD;/* don't litter wilderness eternally ^^ */
 						o_idx = drop_near(0, o_ptr, 0, &p_ptr->wpos, y1, x1);
 					}
+					/* Item failed to drop or get scattered and just gets eaten? Paranoia log */
+					if (o_idx <= 0) {
+						char o_name[ONAME_LEN];
+
+						object_desc(0, o_name, o_ptr, TRUE, 3);
+						s_printf("Death-failed-to-away %s\n", o_name);
+					}
+				} else s_printf("Death-NO-ZCAVE.\n"); //paranoia-log
 			}
 		} else {
 			/* set the artifact as unfound */
@@ -8867,8 +9114,14 @@ void player_death(int Ind) {
 		if (insanity) {
 			/* Tell him */
 			msg_print(Ind, "\374\377RYou die.");
-			//msg_print(Ind, NULL);
-//todo: use 'died_from' (insanity-blinking-style):
+#if CHATTERBOX_LEVEL > 2
+			if (p_ptr->last_words) {
+				char death_message[80];
+				(void)get_rnd_line("death.txt", 0, death_message, 80);
+				msg_print(Ind, death_message);
+			}
+#endif
+			//todo: use 'died_from' (insanity-blinking-style):
 			msg_format(Ind, "\374\377%c**\377rYou have been destroyed by \377oI\377Gn\377bs\377Ba\377sn\377Ri\377vt\377yy\377r.\377%c**", msg_layout, msg_layout);
 
 s_printf("CHARACTER_TERMINATION: INSANITY race=%s ; class=%s ; trait=%s ; %d deaths\n", race_info[p_ptr->prace].title, class_info[p_ptr->pclass].title, trait_info[p_ptr->ptrait].title, p_ptr->deaths);
@@ -8881,18 +9134,6 @@ s_printf("CHARACTER_TERMINATION: INSANITY race=%s ; class=%s ; trait=%s ; %d dea
 			if (!strcmp(p_ptr->died_from, "It") || !strcmp(p_ptr->died_from, "insanity") || p_ptr->image)
 				s_printf("(%s was really destroyed by %s.)\n", p_ptr->name, p_ptr->really_died_from);
 
-#if CHATTERBOX_LEVEL > 2
-			if (strstr(p_ptr->died_from, "Farmer Maggot's dog") && magik(50)) {
-				msg_broadcast(0, "Suddenly a thought comes to your mind:");
-				msg_broadcast(0, "Who let the dogs out?");
-			} else if (p_ptr->last_words) {
-				char death_message[80];
-
-				(void)get_rnd_line("death.txt", 0, death_message, 80);
-				msg_print(Ind, death_message);
-			}
-#endif	// CHATTERBOX_LEVEL
-
 			death_type = DEATH_INSANITY;
 			if (p_ptr->ghost) {
 				death_type = DEATH_GHOST;
@@ -8902,6 +9143,15 @@ s_printf("CHARACTER_TERMINATION: INSANITY race=%s ; class=%s ; trait=%s ; %d dea
 		} else if (p_ptr->ghost) {
 			/* Tell him */
 			msg_format(Ind, "\374\377a**\377rYour ghost was destroyed by %s.\377a**", p_ptr->died_from);
+#if CHATTERBOX_LEVEL > 2
+ #ifdef WHO_LET_THE_DOGS_OUT
+			if (strstr(p_ptr->died_from, "Farmer Maggot's dog") && magik(WHO_LET_THE_DOGS_OUT)) {
+				//msg_broadcast(0, "Suddenly a thought comes to your mind:");
+				msg_broadcast(0, "Who let the dogs out?");
+			}
+ #endif
+			/* No last_words from death.txt, because we already are a ghost ie dead.. */
+#endif
 
 s_printf("CHARACTER_TERMINATION: GHOSTKILL race=%s ; class=%s ; trait=%s ; %d deaths\n", race_info[p_ptr->prace].title, class_info[p_ptr->pclass].title, trait_info[p_ptr->ptrait].title, p_ptr->deaths);
 
@@ -8926,23 +9176,23 @@ s_printf("CHARACTER_TERMINATION: GHOSTKILL race=%s ; class=%s ; trait=%s ; %d de
 			if (!strcmp(p_ptr->died_from, "It") || !strcmp(p_ptr->died_from, "insanity") || p_ptr->image)
 				s_printf("(%s's ghost was really destroyed by %s.)\n", p_ptr->name, p_ptr->really_died_from);
 
-#if CHATTERBOX_LEVEL > 2
-			if (strstr(p_ptr->died_from, "Farmer Maggot's dog") && magik(50)) {
-				msg_broadcast(0, "Suddenly a thought comes to your mind:");
-				msg_broadcast(0, "Who let the dogs out?");
-			} else if (p_ptr->last_words) {
-				char death_message[80];
-
-				(void)get_rnd_line("death.txt", 0, death_message, 80);
-				msg_print(Ind, death_message);
-			}
-#endif	// CHATTERBOX_LEVEL
-
 			death_type = DEATH_GHOST;
 		} else {
 			/* Tell him */
 			msg_print(Ind, "\374\377RYou die.");
-			//msg_print(Ind, NULL);
+#if CHATTERBOX_LEVEL > 2
+ #ifdef WHO_LET_THE_DOGS_OUT
+			if (strstr(p_ptr->died_from, "Farmer Maggot's dog") && magik(WHO_LET_THE_DOGS_OUT)) {
+				//msg_broadcast(0, "Suddenly a thought comes to your mind:");
+				msg_broadcast(0, "Who let the dogs out?");
+			} else
+ #endif
+			if (p_ptr->last_words) {
+				char death_message[80];
+				(void)get_rnd_line("death.txt", 0, death_message, 80);
+				msg_print(Ind, death_message);
+			}
+#endif
 #ifdef MORGOTH_FUNKY_KILL_MSGS /* Might add some atmosphere? (lol) - C. Blue */
 			if (!strcmp(p_ptr->died_from, "Morgoth, Lord of Darkness")) {
 				char funky_msg[20];
@@ -9014,16 +9264,6 @@ s_printf("CHARACTER_TERMINATION: GHOSTKILL race=%s ; class=%s ; trait=%s ; %d de
 
 s_printf("CHARACTER_TERMINATION: %s race=%s ; class=%s ; trait=%s ; %d deaths\n", pvp ? "PVP" : "NOGHOST", race_info[p_ptr->prace].title, class_info[p_ptr->pclass].title, trait_info[p_ptr->ptrait].title, p_ptr->deaths);
 
-#if CHATTERBOX_LEVEL > 2
-			if (strstr(p_ptr->died_from, "Farmer Maggot's dog") && magik(50)) {
-				msg_broadcast(0, "Suddenly a thought comes to your mind:");
-				msg_broadcast(0, "Who let the dogs out?");
-			} else if (p_ptr->last_words) {
-				char death_message[80];
-				(void)get_rnd_line("death.txt", 0, death_message, 80);
-				msg_print(Ind, death_message);
-			}
-#endif	// CHATTERBOX_LEVEL
 			death_type = DEATH_PERMA;
 			Send_chardump(Ind, "-death");
 			Net_output1(Ind);
@@ -9345,22 +9585,42 @@ s_printf("CHARACTER_TERMINATION: RETIREMENT race=%s ; class=%s ; trait=%s ; %d d
 
 	/* Tell him */
 	msg_print(Ind, "\374\377RYou die.");
-	//msg_print(Ind, NULL);
+
 #if CHATTERBOX_LEVEL > 2
-	if (strstr(p_ptr->died_from, "Farmer Maggot's dog") && magik(50)) {
-		msg_broadcast(0, "Suddenly a thought comes to your mind:");
+ #ifdef WHO_LET_THE_DOGS_OUT
+	if (strstr(p_ptr->died_from, "Farmer Maggot's dog") && magik(WHO_LET_THE_DOGS_OUT)) {
+		//msg_broadcast(0, "Suddenly a thought comes to your mind:");
 		msg_broadcast(0, "Who let the dogs out?");
-	} else if (p_ptr->last_words) {
+	} else
+ #endif
+	if (p_ptr->last_words) {
 		char death_message[80];
 
 		(void)get_rnd_line("death.txt", 0, death_message, 80);
 		msg_print(Ind, death_message);
 	}
-#endif	// CHATTERBOX_LEVEL
+#endif
+
+	if ((p_ptr->deathblow < 10) || ((p_ptr->deathblow < p_ptr->mhp / 4) && (p_ptr->deathblow < 100))
+#ifdef ENABLE_MAIA
+	    || streq(p_ptr->died_from, "indecisiveness")
+#endif
+	    || streq(p_ptr->died_from, "indetermination")
+	    || streq(p_ptr->died_from, "starvation")
+	    || streq(p_ptr->died_from, "poisonous food")
+	    || insanity)
+		msg_format(Ind, "\374\377RYou have been killed by %s.", p_ptr->died_from);
+	else if ((p_ptr->deathblow < 30) || ((p_ptr->deathblow < p_ptr->mhp / 2) && (p_ptr->deathblow < 450)))
+		msg_format(Ind, "\374\377RYou have been annihilated by %s.", p_ptr->died_from);
+	else msg_format(Ind, "\374\377RYou have been vaporized by %s.", p_ptr->died_from);
 
 	/* Paranoia - ghosts getting destroyed are already caught above */
 	if (p_ptr->ghost) Send_chardump(Ind, "-ghost"); else
 	Send_chardump(Ind, "-death");
+
+#ifdef RACE_DIZ
+	display_diz_death(Ind);
+#endif
 
 	/* Polymorph back to player */
 	if (p_ptr->body_monster) do_mimic_change(Ind, 0, TRUE);
@@ -9383,23 +9643,6 @@ s_printf("CHARACTER_TERMINATION: RETIREMENT race=%s ; class=%s ; trait=%s ; %d d
 	p_ptr->update |= PU_SANITY;
 	update_stuff(Ind);
 	p_ptr->safe_sane = FALSE;
-
-	if ((p_ptr->deathblow < 10) || ((p_ptr->deathblow < p_ptr->mhp / 4) && (p_ptr->deathblow < 100))
-#ifdef ENABLE_MAIA
-	    || streq(p_ptr->died_from, "indecisiveness")
-#endif
-	    || streq(p_ptr->died_from, "indetermination")
-	    || streq(p_ptr->died_from, "starvation")
-	    || streq(p_ptr->died_from, "poisonous food")
-	    || insanity)
-		msg_format(Ind, "\374\377RYou have been killed by %s.", p_ptr->died_from);
-	else if ((p_ptr->deathblow < 30) || ((p_ptr->deathblow < p_ptr->mhp / 2) && (p_ptr->deathblow < 450)))
-		msg_format(Ind, "\374\377RYou have been annihilated by %s.", p_ptr->died_from);
-	else msg_format(Ind, "\374\377RYou have been vaporized by %s.", p_ptr->died_from);
-
-#ifdef RACE_DIZ
-	display_diz_death(Ind);
-#endif
 
 #if (MAX_PING_RECVS_LOGGED > 0)
 	/* Print last ping reception times */
@@ -9965,7 +10208,7 @@ bool prepare_xorder(int Ind, int j, u16b flags, int *level, u16b *type, u16b *nu
 	get_mon_num_hook = xorder_aux;
 	xorder_aux_extra = p_ptr->total_winner;
 	get_mon_num_prep(0, NULL);
-	i = 2 + randint(5);
+	i = 3 + rand_int(3);
 
 	do {
 		r = get_mon_num(lev, lev - 10); //reduce OoD chance slightly
@@ -9986,6 +10229,8 @@ bool prepare_xorder(int Ind, int j, u16b flags, int *level, u16b *type, u16b *nu
 			if (r_info[r].flags1 & RF1_FRIENDS) i = i + 3 + randint(4);
 			/* very easy for very low level non-friends quests */
 			else if (lev < 20) i = (i + 1) / 2;
+			/* somewhat easier for low-mid level non-friends quests */
+			else if (lev < 30) i = (i * 3 + 3) / 4;
 		} else {
 			if (r_info[r].flags1 & RF1_FRIENDS) i = i + 9 + randint(5);
 			if (i > 6) i--;
@@ -10056,12 +10301,16 @@ bool mon_take_hit(int Ind, int m_idx, int dam, bool *fear, cptr note) {
 	}
 #endif
 
+	if (m_ptr->status == M_STATUS_FRIENDLY) return FALSE;
+
 	p_ptr->test_count++;
 	p_ptr->test_dam += dam;
 
-	/* break charmignore */
+	/* Break Charm/Possess */
 	if (m_ptr->charmedignore) {
-		Players[m_ptr->charmedignore]->mcharming--;
+		int Ind = find_player(m_ptr->charmedignore);
+
+		if (Ind) Players[Ind]->mcharming--;
 		m_ptr->charmedignore = 0;
 	}
 
@@ -10576,10 +10825,7 @@ bool mon_take_hit(int Ind, int m_idx, int dam, bool *fear, cptr note) {
 			feed = (6 - (300 / feed)) * 100;//300..600
 			if (r_ptr->flags3 & RF3_DEMON) feed /= 2;
 			if (r_ptr->d_char == 'A') feed /= 3;
-			/* Never get gorged */
-			feed += p_ptr->food;
-			if (feed >= PY_FOOD_MAX) feed = PY_FOOD_MAX - 1;
-			set_food(Ind, feed);
+			set_food(Ind, feed + p_ptr->food);
 		}
 
 		/* Kill credit for quest */
@@ -11689,6 +11935,8 @@ bool target_able(int Ind, int m_idx) {
 #endif
 		if (r_ptr->flags7 & RF7_NO_TARGET) return (FALSE);
 
+		if (m_ptr->status == M_STATUS_FRIENDLY) return FALSE;
+
 		/* Assume okay */
 		return (TRUE);
 	}
@@ -12016,7 +12264,7 @@ bool target_set(int Ind, int dir) {
 				if (q_ptr->body_monster) {
 					snprintf(out_val, sizeof(out_val), "%s the %s (%s)", q_ptr->name, r_name + r_info[q_ptr->body_monster].name, get_ptitle(q_ptr, FALSE));
 				} else {
-					snprintf(out_val, sizeof(out_val), "%s the %s %s", q_ptr->name, get_prace(q_ptr), get_ptitle(q_ptr, FALSE));
+					snprintf(out_val, sizeof(out_val), "%s the %s%s", q_ptr->name, get_prace2(q_ptr), get_ptitle(q_ptr, FALSE));
 				}
 			}
 			//strcpy(out_val, "[<dir>, t, q] ");
@@ -12750,7 +12998,7 @@ void telekinesis_aux(int Ind, int item) {
 		if (true_artifact_p(q_ptr)) a_info[q_ptr->name1].carrier = p_ptr->id;
 
 		/* Highlander Tournament: Don't allow transactions before it begins */
-		if (!p2_ptr->max_exp) {
+		if (!p2_ptr->max_exp && !in_irondeepdive(&p2_ptr->wpos)) {
 			msg_print(Ind2, "You gain a tiny bit of experience from receiving an item via telekinesis.");
 			gain_exp(Ind2, 1);
 		}
@@ -12933,6 +13181,11 @@ void blood_bond(int Ind, object_type *o_ptr) {
 		return;
 	}
 
+	if (check_ignore(Ind2, Ind)) {
+		msg_print(Ind, "That player is currently ignoring you.");
+		return;
+	}
+
 	/* protect players in inns */
 	if ((zcave = getcave(&p2_ptr->wpos))) {
 		c_ptr = &zcave[p2_ptr->py][p2_ptr->px];
@@ -12964,6 +13217,7 @@ void blood_bond(int Ind, object_type *o_ptr) {
 	msg_format(Ind, "\374\377cYou blood bond with %s.", p2_ptr->name);
 	msg_format(Ind2, "\374%s blood bonds with you.", p_ptr->name);
 	msg_broadcast_format(Ind, "\374\377c%s blood bonds with %s.", p_ptr->name, p2_ptr->name);
+	p2_ptr->paging = 2;
 
 	/* new: auto-hostile, circumventing town peace zone functionality: */
 	add_hostility(Ind, p2_ptr->name, TRUE);
@@ -13155,11 +13409,13 @@ bool master_level(int Ind, char * parms) {
 	{
 		cave_type **zcave;
 		u32b f1 = 0x0, f2 = 0x0, f3 = 0x0;
+
 		if (!parms[1] || !parms[2] || p_ptr->wpos.wz) return FALSE;
 		if (istown(&p_ptr->wpos)){
 			msg_print(Ind,"Even you may not create dungeons in the town!");
 			return FALSE;
 		}
+
 		/* extract flags (note that 0x01 are reservd hacks to prevent zero byte) */
 		if (parms[4] & 0x02) f1 |= DF1_FORGET;
 		if (parms[4] & 0x04) f3 |= (DF3_HIDDENLIB | DF3_DEEPSUPPLY);
@@ -13183,26 +13439,48 @@ bool master_level(int Ind, char * parms) {
 			if (parms[6] & 0x40) f2 |= DF2_IRONFIX3;
 			if (parms[6] & 0x80) f2 |= DF2_IRONFIX4;
 		}
+		/* Hack: Negative theme makes it a type instead. */
+		if (parms[7] < 0) i = -parms[7];
+		else i = 0;
+
 		/* create tower or dungeon */
-		if (parms[3] == 't' && !(wild_info[p_ptr->wpos.wy][p_ptr->wpos.wx].flags & WILD_F_UP)){
-			printf("tower: flags %x,%x\n", f1, f2);
-			if ((zcave = getcave(&p_ptr->wpos))) {
-				zcave[p_ptr->py][p_ptr->px].feat = FEAT_LESS;
-				if (zcave[p_ptr->py][p_ptr->px].info & CAVE_JAIL) f3 |= DF3_JAIL_DUNGEON;
+		if (i) {
+			if (d_info[i].flags1 & DF1_TOWER) {
+				s_printf("Added predefined tower %d.\n", i);
+				add_dungeon(&p_ptr->wpos, 0, 0, 0, 0, 0, TRUE, i, 0, 0, 0);
+				new_level_down_y(&p_ptr->wpos, p_ptr->py);
+				new_level_down_x(&p_ptr->wpos, p_ptr->px);
+				if ((zcave = getcave(&p_ptr->wpos))) zcave[p_ptr->py][p_ptr->px].feat = FEAT_LESS;
+			} else {
+				s_printf("Added predefined dungeon %d.\n", i);
+				add_dungeon(&p_ptr->wpos, 0, 0, 0, 0, 0, FALSE, i, 0, 0, 0);
+				new_level_up_y(&p_ptr->wpos, p_ptr->py);
+				new_level_up_x(&p_ptr->wpos, p_ptr->px);
+				if ((zcave = getcave(&p_ptr->wpos))) zcave[p_ptr->py][p_ptr->px].feat = FEAT_MORE;
 			}
-			add_dungeon(&p_ptr->wpos, parms[1], parms[2], f1, f2, f3, TRUE, 0, parms[7], 0, 0);
-			new_level_down_y(&p_ptr->wpos, p_ptr->py);
-			new_level_down_x(&p_ptr->wpos, p_ptr->px);
-		}
-		if (parms[3] == 'd' && !(wild_info[p_ptr->wpos.wy][p_ptr->wpos.wx].flags & WILD_F_DOWN)){
-			printf("dungeon: flags %x,%x\n", f1, f2);
-			if ((zcave = getcave(&p_ptr->wpos))) {
-				zcave[p_ptr->py][p_ptr->px].feat = FEAT_MORE;
-				if (zcave[p_ptr->py][p_ptr->px].info & CAVE_JAIL) f3 |= DF3_JAIL_DUNGEON;
+		} else {
+			if (parms[3] == 't' && !(wild_info[p_ptr->wpos.wy][p_ptr->wpos.wx].flags & WILD_F_UP)) {
+				printf("tower: flags %x,%x\n", f1, f2);
+				if ((zcave = getcave(&p_ptr->wpos))) {
+					zcave[p_ptr->py][p_ptr->px].feat = FEAT_LESS;
+					if (zcave[p_ptr->py][p_ptr->px].info & CAVE_JAIL) f3 |= DF3_JAIL_DUNGEON;
+				}
+				s_printf("Added generic tower of theme %d.\n", parms[7]);
+				add_dungeon(&p_ptr->wpos, parms[1], parms[2], f1, f2, f3, TRUE, 0, parms[7], 0, 0);
+				new_level_down_y(&p_ptr->wpos, p_ptr->py);
+				new_level_down_x(&p_ptr->wpos, p_ptr->px);
 			}
-			add_dungeon(&p_ptr->wpos, parms[1], parms[2], f1, f2, f3, FALSE, 0, parms[7], 0, 0);
-			new_level_up_y(&p_ptr->wpos, p_ptr->py);
-			new_level_up_x(&p_ptr->wpos, p_ptr->px);
+			if (parms[3] == 'd' && !(wild_info[p_ptr->wpos.wy][p_ptr->wpos.wx].flags & WILD_F_DOWN)) {
+				printf("dungeon: flags %x,%x\n", f1, f2);
+				if ((zcave = getcave(&p_ptr->wpos))) {
+					zcave[p_ptr->py][p_ptr->px].feat = FEAT_MORE;
+					if (zcave[p_ptr->py][p_ptr->px].info & CAVE_JAIL) f3 |= DF3_JAIL_DUNGEON;
+				}
+				s_printf("Added generic dungeon of theme %d.\n", parms[7]);
+				add_dungeon(&p_ptr->wpos, parms[1], parms[2], f1, f2, f3, FALSE, 0, parms[7], 0, 0);
+				new_level_up_y(&p_ptr->wpos, p_ptr->py);
+				new_level_up_x(&p_ptr->wpos, p_ptr->px);
+			}
 		}
 		break;
 	}

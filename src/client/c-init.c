@@ -81,7 +81,7 @@ void init_spells(s16b new_size) {
 	max_spells = new_size;
 }
 
-static bool check_dir2(cptr s) {
+bool check_dir2(cptr s) {
 	DIR *dp = opendir(s);
 
 	if (dp) {
@@ -222,7 +222,10 @@ void initialize_main_pref_files(void) {
 		Client_setup.options[CO_BIGMAP] = FALSE;
 
 		/* Hack for now: Palette animation seems to cause segfault on login in command-line client */
+		//no effect here, as it gets reset by check_immediate_options()
 		c_cfg.palette_animation = FALSE;
+		(*option_info[CO_PALETTE_ANIMATION].o_var) = FALSE;
+		Client_setup.options[CO_PALETTE_ANIMATION] = FALSE;
 	}
 
 
@@ -423,13 +426,6 @@ static void init_monster_list() {
 		}
 
 		if (buf[0] == 'N') {
-			if (discard) {
-				/* flashy-thingy tiem */
-				monster_list_idx--;
-
-				discard = FALSE;
-			}
-
 			if (!basehued) {
 				if (multihued) monster_list_any[monster_list_idx - 1] = TRUE;
 				else if (breathhued) monster_list_breath[monster_list_idx - 1] = TRUE;
@@ -437,6 +433,13 @@ static void init_monster_list() {
 			multihued = FALSE;
 			breathhued = FALSE;
 			basehued = FALSE;
+
+			if (discard) {
+				/* flashy-thingy tiem */
+				monster_list_idx--;
+
+				discard = FALSE;
+			}
 
 			/* hard-skip specialties */
 			if (atoi(buf + 2) == RI_BLUE || atoi(buf + 2) == RI_MIRROR) discard = TRUE;
@@ -1765,8 +1768,10 @@ static void init_artifact_list() {
 		strcat(artifact_list_name[artifact_list_idx], art_name);
 		/* new: add [coloured?] symbol to indicate item type (sometimes impossible to recognize otherwise) */
 		if (i < MAX_K_IDX) { //paranoia?
-#if 0 /* we cannot predict the attr for flavoured items! (rings, amulets) */
-			strcpy(buf, format(" <\377%c%c\377->", kind_list_attr[i], kind_list_char[i]));
+#if 1 /* we cannot predict the attr for flavoured items! (rings, amulets) */
+			/* For insta-arts: Those that don't have a specific colour are 'd' in k_info to indicate that they
+			   are ok with receiving a random flavour. Have to substitute that for something readable here. */
+			strcpy(buf, format("\377%c%c\377-  ", kind_list_attr[i] == 'd' ? 's' : kind_list_attr[i], kind_list_char[i]));
 #else
 			strcpy(buf, format("%c  ", kind_list_char[i]));
 #endif
@@ -3091,9 +3096,7 @@ static void display_message(cptr msg, cptr title) {
  */
 static void quit_hook(cptr s) {
 	int j, res = save_chat;
-	FILE *f;
 	char buf[1024];
-
 
 #if 0
 #ifdef USE_SOUND_2010
@@ -3112,29 +3115,31 @@ static void quit_hook(cptr s) {
 	/* Display the quit reason */
 	if (s && *s) display_message(s, "Quitting");
 
-	if (message_num() && (res || (res = get_3way("Save chat log/all messages?", TRUE)))) {
-		FILE *fp;
-		char buf[80], buf2[1024];
-		int i;
-		time_t ct = time(NULL);
-		struct tm* ctl = localtime(&ct);
+	if (save_chat != 3) {
+		if (message_num() && (res || (res = get_3way("Save chat log/all messages?", TRUE)))) {
+			FILE *fp;
+			char buf[80], buf2[1024];
+			int i;
+			time_t ct = time(NULL);
+			struct tm* ctl = localtime(&ct);
 
-		if (res == 1) strcpy(buf, "tomenet-chat_");
-		else strcpy(buf, "tomenet-messages_");
-		strcat(buf, format("%04d-%02d-%02d_%02d.%02d.%02d",
-		    1900 + ctl->tm_year, ctl->tm_mon + 1, ctl->tm_mday,
-		    ctl->tm_hour, ctl->tm_min, ctl->tm_sec));
-		strcat(buf, ".txt");
+			if (res == 1) strcpy(buf, "tomenet-chat_");
+			else strcpy(buf, "tomenet-messages_");
+			strcat(buf, format("%04d-%02d-%02d_%02d.%02d.%02d",
+			    1900 + ctl->tm_year, ctl->tm_mon + 1, ctl->tm_mday,
+			    ctl->tm_hour, ctl->tm_min, ctl->tm_sec));
+			strcat(buf, ".txt");
 
-		i = message_num();
-		if (!save_chat) get_string("Filename:", buf, 79);
-		/* maybe one day we'll get a Mac client */
-		FILE_TYPE(FILE_TYPE_TEXT);
-		path_build(buf2, 1024, ANGBAND_DIR_USER, buf);
-		fp = my_fopen(buf2, "w");
-		if (fp != (FILE*)NULL) {
-			dump_messages_aux(fp, i, 2 - res, FALSE);//FALSE
-			fclose(fp);
+			i = message_num();
+			if (!save_chat) get_string("Filename:", buf, 79);
+			/* maybe one day we'll get a Mac client */
+			FILE_TYPE(FILE_TYPE_TEXT);
+			path_build(buf2, 1024, ANGBAND_DIR_USER, buf);
+			fp = my_fopen(buf2, "w");
+			if (fp != (FILE*)NULL) {
+				dump_messages_aux(fp, i, 2 - res, FALSE);//FALSE
+				fclose(fp);
+			}
 		}
 	}
 
@@ -3149,13 +3154,24 @@ static void quit_hook(cptr s) {
 #endif
 
 	/* Remember chat input history across logins */
-	path_build(buf, 1024, ANGBAND_DIR_USER, format("chathist-%s.tmp", nick));
-	f = fopen(buf, "w");
-	for (j = 0; j < MSG_HISTORY_MAX; j++) {
-		if (!message_history_chat[j][0]) continue;
-		fprintf(f, "%s\n", message_history_chat[j]);
+	/* Only write history if we have at least one line though */
+	if (hist_chat_end || hist_chat_looped) {
+		FILE *fp;
+		path_build(buf, 1024, ANGBAND_DIR_USER, format("chathist-%s.tmp", nick));
+		fp = fopen(buf, "w");
+		if (!hist_chat_looped) {
+			for (j = 0; j < hist_chat_end; j++) {
+				if (!message_history_chat[j][0]) continue;
+				fprintf(fp, "%s\n", message_history_chat[j]);
+			}
+		} else {
+			for (j = hist_chat_end; j < hist_chat_end + MSG_HISTORY_MAX; j++) {
+				if (!message_history_chat[j % MSG_HISTORY_MAX][0]) continue;
+				fprintf(fp, "%s\n", message_history_chat[j % MSG_HISTORY_MAX]);
+			}
+		}
+		fclose(fp);
 	}
-	fclose(f);
 
 #ifdef RETRY_LOGIN
 	/* don't kill the windows and all */
@@ -3196,6 +3212,9 @@ static void init_sound() {
 	/* One-time popup dialogue, to inform and instruct user of audio capabilities */
 	if (sound_hint) plog("*******************************************\nTomeNET supports music and sound effects!\nTo enable those, you need to have audio packs installed,\nsee http://www.tomenet.eu/ forum and downloads.\n*******************************************\n");
 
+	/* Initialise this even if we don't use sound, just for its visual effect */
+	thunder_sound_idx = exec_lua(0, "return get_sound_index(\"thunder\")");
+
 	if (!use_sound) {
 		/* Don't initialize sound modules */
 		return;
@@ -3234,6 +3253,9 @@ static void init_sound() {
 int re_init_sound() {
 #ifdef USE_SOUND_2010
 	int i, err;
+
+	/* Initialise this even if we don't use sound, just for its visual effect */
+	thunder_sound_idx = exec_lua(0, "return get_sound_index(\"thunder\")");
 
 	if (!use_sound) {
 		/* Don't initialize sound modules */
@@ -3328,7 +3350,7 @@ void client_init(char *argv1, bool skip) {
 #ifdef RETRY_LOGIN
 	bool rl_auto_relogin = FALSE;
 #endif
-	FILE *f;
+	FILE *fp;
 	char buf[1024];
 
 #if defined(USE_X11) || defined(USE_GCU)
@@ -3556,6 +3578,10 @@ void client_init(char *argv1, bool skip) {
 				quit("Sorry, the game is full.  Try again later.");
 			case E_IN_USE:
 				quit("That nickname is already in use. If it is your nickname, wait 30 seconds and try again.");
+			case E_IN_USE_PC:
+				quit("You are still logged in from another PC. Please wait 30 seconds and try again.");
+			case E_IN_USE_DUP:
+				quit("You are already logging in from another instance of the game.");
 			case E_INVAL:
 				quit("The server didn't like your nickname, realname, or hostname.");
 				//note: not a good case for RETRY_LOGIN, since a name or even the hostname might be asian/cyrillic or so.. not easily solvable maybe
@@ -3580,6 +3606,9 @@ void client_init(char *argv1, bool skip) {
 
 	/* Close our current connection */
 	/* Dont close the TCP connection DgramClose(Socket); */
+
+	/* Clean up initial sockbuf so that it doesn't leak with RETRY_LOGIN */
+	Sockbuf_cleanup(&ibuf);
 
 	/* Connect to the server on the port it sent */
 	if (Net_init(Socket) == -1)
@@ -3608,6 +3637,7 @@ void client_init(char *argv1, bool skip) {
 			Net_cleanup();
 			c_quit = FALSE; //un-quit, paranoia at this point though (only needed for Input_loop())
 			if (!rl_auto_relogin) my_memfrob(pass, strlen(pass)); //need to un-frob the password as it will get refrobbed right over there again
+			skip = FALSE; //prevent infinite loop if -lNAME PASS args were supplied and they are wrong
 			goto retry_contact;
 		}
 		/* bad character name? */
@@ -3639,6 +3669,12 @@ void client_init(char *argv1, bool skip) {
 
 	/* Initialize the pref files */
 	initialize_main_pref_files();
+
+	/* Pre-initialize character-specific options, just for sending early censor_swearing to the server,
+	   so we can receive private/party/guild notes in the desired format. */
+	sprintf(buf, "%s.opt", cname);
+	process_pref_file(buf);
+	Send_options();
 
 	/* Handle asking for big_map mode on first time startup */
 #if defined(USE_X11) || defined(WINDOWS)
@@ -3703,12 +3739,17 @@ void client_init(char *argv1, bool skip) {
 	/* Hack -- flush the key buffer */
 	Term_flush();
 
-	/* Remember chat input history across logins */
+	/* Remember chat input history across logins --
+	   ironically we 'reset message log' between logins in another place, not totally efficient.. */
 	path_build(buf, 1024, ANGBAND_DIR_USER, format("chathist-%s.tmp", nick));
-	f = fopen(buf, "r");
+	fp = fopen(buf, "r");
 	hist_chat_end = 0;
-	while (f && my_fgets(f, message_history_chat[hist_chat_end], MSG_LEN) == 0) hist_chat_end++;
-	if (f) fclose(f);
+	while (fp && hist_chat_end < MSG_HISTORY_MAX && my_fgets(fp, message_history_chat[hist_chat_end], MSG_LEN) == 0) hist_chat_end++;
+	if (fp) fclose(fp);
+	if (hist_chat_end == MSG_HISTORY_MAX) {
+		hist_chat_end = 0;
+		hist_chat_looped = TRUE;
+	}
 
 	/* Turn the lag-o-meter on after we've logged in */
 	lagometer_enabled = TRUE;
@@ -3790,6 +3831,7 @@ void client_init(char *argv1, bool skip) {
 
 bool ask_for_bigmap_generic(void) {
 	int ch;
+	bool ok;
 
 	Term_clear();
 	Term_putstr(10, 3, -1, TERM_ORANGE, "Do you want to double the height of this window?");
@@ -3800,12 +3842,26 @@ bool ask_for_bigmap_generic(void) {
 
 	while (TRUE) {
 		ch = inkey();
-		if (ch == 'y') {
+		if (ch == 'y' || ch == 'Y') {
 			Term_clear();
-			return TRUE;
-		} else if (ch == 'n') {
+			ok = TRUE;
+			break;
+		} else if (ch == 'n' || ch == 'N') {
 			Term_clear();
-			return FALSE;
+			ok = FALSE;
+			break;
 		}
 	}
+
+	/* While at it, point towards graphical fonts */
+	Term_clear();
+	Term_putstr(10, 4, -1, TERM_YELLOW, "And one last thing:");
+	Term_putstr(10, 6, -1, TERM_YELLOW, "This game uses letters, numbers and symbols for 'graphics'.");
+	Term_putstr(10, 8, -1, TERM_YELLOW, "But if you prefer a more graphical representation,");
+	Term_putstr(10, 9, -1, TERM_YELLOW, "in the game press  \377o=  f\377y  and then look through the fonts");
+	Term_putstr(10,10, -1, TERM_YELLOW, "by pressing  \377o+\377y  repeatedly. Graphical fonts will come up!");
+	ch = inkey();
+
+	Term_clear();
+	return ok;
 }

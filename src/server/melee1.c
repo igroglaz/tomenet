@@ -1096,11 +1096,7 @@ bool make_attack_melee(int Ind, int m_idx) {
 			if (!p_ptr->inventory[INVEN_WIELD].k_idx &&
 			    !p_ptr->inventory[INVEN_ARM].k_idx) player_vulnerable = TRUE;
 
-			if (
-#ifdef VAMPIRES_BB_IMMUNE
-			    p_ptr->prace != RACE_VAMPIRE &&
-#endif
-			    !p_ptr->black_breath &&
+			if (!p_ptr->black_breath &&
 			    !safe_area(Ind) && /* just for Arena Monster Challenge! */
 			    (!p_ptr->suscep_life || !rand_int(3)) && (
 			     (r_ptr->flags7 & RF7_NAZGUL && magik(player_vulnerable ? 10 : 25)) || (
@@ -1260,6 +1256,7 @@ bool make_attack_melee(int Ind, int m_idx) {
 					/* discharge player's live form he attained from a
 					   ring of polymorphing! (anti-cheeze for Morgoth) */
 					if (!p_ptr->martyr
+					    && p_ptr->tim_mimic && p_ptr->body_monster == p_ptr->tim_mimic_what /* only if you are currently using that form */
  #ifdef ENABLE_HELLKNIGHT
 					    && p_ptr->pclass != CLASS_HELLKNIGHT
   #ifdef ENABLE_CPRIEST
@@ -1271,7 +1268,7 @@ bool make_attack_melee(int Ind, int m_idx) {
 							msg_print(Ind, "\377LThe magical force stabilizing your form fades *rapidly*...");
 							set_mimic(Ind, (p_ptr->tim_mimic * 3) / 4, p_ptr->tim_mimic_what);
 						}
-						else if (p_ptr->tim_mimic) {
+						else {
 							msg_print(Ind, "\377LThe magical force stabilizing your form fades *rapidly*...");
 							set_mimic(Ind, p_ptr->tim_mimic - 200, p_ptr->tim_mimic_what);
 						}
@@ -1353,7 +1350,8 @@ bool make_attack_melee(int Ind, int m_idx) {
 								/* Pfft, this is really sucky... -,- MD should have something to
 								 * do with it, at least... Will change it to 1_in_MDlev chance of
 								 * total draining. Otherwise we will decrement. the_sandman
-								 * - actual idea was to make ELEC IMM worth something btw =-p - C. Blue */
+								 * - actual idea was to make ELEC IMM worth something btw =-p - C. Blue
+								 ===> Note: MD skill and resist_discharge (from UN_POWER forms) indeed are preventing this now! */
 								if (magik(chance)) o_ptr->pval--;
 								else o_ptr->pval = 0;
 							}
@@ -1508,8 +1506,7 @@ bool make_attack_melee(int Ind, int m_idx) {
 						break;
 					}
 
-					else if (TOOL_EQUIPPED(p_ptr) == SV_TOOL_THEFT_PREVENTION &&
-							magik (80))
+					else if (TOOL_EQUIPPED(p_ptr) == SV_TOOL_THEFT_PREVENTION && magik(100)) //80
 					{
 						/* Saving throw message */
 						msg_print(Ind, "Your backpack was secured!");
@@ -2709,7 +2706,8 @@ bool make_attack_melee(int Ind, int m_idx) {
 								    inven_drop(Ind, slot, 1);
 #endif
 #ifdef DISARM_SCATTER
-								if (o_idx == -1) {
+								if (o_idx == -1) s_printf("DISARM: ITEM DESTROYED.\n");
+								else if (o_idx == -2) {
 									int x1, y1, try = 500;
 									cave_type **zcave;
 
@@ -2723,7 +2721,7 @@ bool make_attack_melee(int Ind, int m_idx) {
 											forge.marked2 = ITEM_REMOVAL_DEATH_WILD;
 											o_idx = drop_near(0, &forge, 0, &p_ptr->wpos, y1, x1);
 										}
-									s_printf("SCATTERING %s.\n", o_idx ? "succeeded" : "failed");
+									s_printf("DISARM: SCATTERING %s.\n", o_idx > 0 ? "succeeded" : "failed");
 								}
 #endif
 								if (slot == INVEN_ARM) dis_sec = TRUE;
@@ -2758,7 +2756,8 @@ bool make_attack_melee(int Ind, int m_idx) {
 								    inven_drop(Ind, INVEN_WIELD, 1);
 								s_printf("%s EFFECT: Disarmed (dual, drop) %s: %s.\n", showtime(), p_ptr->name, o_name);
 #ifdef DISARM_SCATTER
-								if (o_idx == -1) {
+								if (o_idx == -1) s_printf("DISARM: ITEM DESTROYED.\n");
+								else if (o_idx == -2) {
 									int x1, y1, try = 500;
 									cave_type **zcave;
 
@@ -2772,7 +2771,7 @@ bool make_attack_melee(int Ind, int m_idx) {
 											forge.marked2 = ITEM_REMOVAL_DEATH_WILD;
 											o_idx = drop_near(0, &forge, 0, &p_ptr->wpos, y1, x1);
 										}
-									s_printf("SCATTERING %s.\n", o_idx ? "succeeded" : "failed");
+									s_printf("SCATTERING %s.\n", o_idx > 0 ? "succeeded" : "failed");
 								}
 #endif
 							}
@@ -2794,7 +2793,8 @@ bool make_attack_melee(int Ind, int m_idx) {
 								    inven_drop(Ind, INVEN_ARM, 1);
 								s_printf("%s EFFECT: Disarmed (dual, drop) %s: %s.\n", showtime(), p_ptr->name, o_name);
 #ifdef DISARM_SCATTER
-								if (o_idx == -1) {
+								if (o_idx == -2) s_printf("DISARM: ITEM DESTROYED.\n");
+								else if (o_idx == -1) {
 									int x1, y1, try = 500;
 									cave_type **zcave;
 
@@ -2808,7 +2808,7 @@ bool make_attack_melee(int Ind, int m_idx) {
 											forge.marked2 = ITEM_REMOVAL_DEATH_WILD;
 											o_idx = drop_near(0, &forge, 0, &p_ptr->wpos, y1, x1);
 										}
-									s_printf("SCATTERING %s.\n", o_idx ? "succeeded" : "failed");
+									s_printf("SCATTERING %s.\n", o_idx > 0 ? "succeeded" : "failed");
 								}
 #endif
 							}
@@ -3054,7 +3054,7 @@ bool make_attack_melee(int Ind, int m_idx) {
 					case 3: k = randint(15) + 10; break;
 					case 4: k = randint(15) + 20; break;
 					case 5: k = randint(15) + 30; break;
-					case 6: k = randint(15) + 40;; break;
+					case 6: k = randint(15) + 40; break;
 					case 7: k = randint(10) + 55; break;
 					case 8: k = randint(5) + 70; break;
 					default: k = 100; break; /* currently 8 is max, so this cannot happen */
@@ -3081,26 +3081,88 @@ bool make_attack_melee(int Ind, int m_idx) {
 				int auras_failed = 0;
 
 				/*
-				 * Apply item auras
+				 * Apply non-skill auras
 				 */
-				/* Immolation / fire aura */
-				if (p_ptr->sh_fire && alive) {
-					if (!(r_ptr->flags3 & RF3_IM_FIRE)) {
-						player_aura_dam = damroll(2,6);
-						if (r_ptr->flags9 & RF9_RES_FIRE) player_aura_dam /= 3;
-						if (r_ptr->flags3 & RF3_SUSCEP_FIRE) player_aura_dam *= 2;
-						msg_format(Ind, "%^s is enveloped in flames for %d damage!", m_name, player_aura_dam);
-						if (mon_take_hit(Ind, m_idx, player_aura_dam, &fear,
-						    " turns into a pile of ashes")) {
-							blinked = FALSE;
-							alive = FALSE;
+
+				/* Alternate contradicting auras, same as with brands */
+				if (p_ptr->sh_fire && p_ptr->sh_cold && alive) {
+					/* Immolation / fire aura */
+					if (rand_int(2)) {
+						if (!(r_ptr->flags3 & RF3_IM_FIRE)) {
+							player_aura_dam = damroll(2,6);
+							if (r_ptr->flags9 & RF9_RES_FIRE) player_aura_dam /= 3;
+							if (r_ptr->flags3 & RF3_SUSCEP_FIRE) player_aura_dam *= 2;
+							msg_format(Ind, "%^s is enveloped in flames for %d damage!", m_name, player_aura_dam);
+							if (mon_take_hit(Ind, m_idx, player_aura_dam, &fear,
+							    " turns into a pile of ashes")) {
+								blinked = FALSE;
+								alive = FALSE;
+							}
 						}
-					}
 #ifdef OLD_MONSTER_LORE
-					else {
-						if (p_ptr->mon_vis[m_idx]) r_ptr->r_flags3 |= RF3_IM_FIRE;
-					}
+						else {
+							if (p_ptr->mon_vis[m_idx]) r_ptr->r_flags3 |= RF3_IM_FIRE;
+						}
 #endif
+					}
+					/* Frostweaving / cold aura */
+					else {
+						if (!(r_ptr->flags3 & RF3_IM_COLD)) {
+							player_aura_dam = damroll(2,6);
+							if (r_ptr->flags9 & RF9_RES_COLD) player_aura_dam /= 3;
+							if (r_ptr->flags3 & RF3_SUSCEP_COLD) player_aura_dam *= 2;
+							msg_format(Ind, "%^s freezes for %d damage!", m_name, player_aura_dam);
+							if (mon_take_hit(Ind, m_idx, player_aura_dam, &fear,
+							    " freezes and shatters")) {
+								blinked = FALSE;
+								alive = FALSE;
+							}
+						}
+#ifdef OLD_MONSTER_LORE
+						else {
+							if (p_ptr->mon_vis[m_idx]) r_ptr->r_flags3 |= RF3_IM_COLD;
+						}
+#endif
+					}
+				} else {
+					/* Immolation / fire aura */
+					if (p_ptr->sh_fire && alive) {
+						if (!(r_ptr->flags3 & RF3_IM_FIRE)) {
+							player_aura_dam = damroll(2,6);
+							if (r_ptr->flags9 & RF9_RES_FIRE) player_aura_dam /= 3;
+							if (r_ptr->flags3 & RF3_SUSCEP_FIRE) player_aura_dam *= 2;
+							msg_format(Ind, "%^s is enveloped in flames for %d damage!", m_name, player_aura_dam);
+							if (mon_take_hit(Ind, m_idx, player_aura_dam, &fear,
+							    " turns into a pile of ashes")) {
+								blinked = FALSE;
+								alive = FALSE;
+							}
+						}
+#ifdef OLD_MONSTER_LORE
+						else {
+							if (p_ptr->mon_vis[m_idx]) r_ptr->r_flags3 |= RF3_IM_FIRE;
+						}
+#endif
+					}
+					/* Frostweaving / cold aura */
+					if (p_ptr->sh_cold && alive) {
+						if (!(r_ptr->flags3 & RF3_IM_COLD)) {
+							player_aura_dam = damroll(2,6);
+							if (r_ptr->flags9 & RF9_RES_COLD) player_aura_dam /= 3;
+							if (r_ptr->flags3 & RF3_SUSCEP_COLD) player_aura_dam *= 2;
+							msg_format(Ind, "%^s freezes for %d damage!", m_name, player_aura_dam);
+							if (mon_take_hit(Ind, m_idx, player_aura_dam, &fear,
+							    " freezes and shatters")) {
+								blinked = FALSE;
+								alive = FALSE;
+							}
+						}
+#ifdef OLD_MONSTER_LORE
+						else {
+							if (p_ptr->mon_vis[m_idx]) r_ptr->r_flags3 |= RF3_IM_COLD;
+						}
+#endif
+					}
 				}
 				/* Electricity / lightning aura */
 				if (p_ptr->sh_elec && alive) {
@@ -3118,25 +3180,6 @@ bool make_attack_melee(int Ind, int m_idx) {
 #ifdef OLD_MONSTER_LORE
 					else {
 						if (p_ptr->mon_vis[m_idx]) r_ptr->r_flags3 |= RF3_IM_ELEC;
-					}
-#endif
-                                }
-				/* Frostweaving / cold aura */
-				if (p_ptr->sh_cold && alive) {
-					if (!(r_ptr->flags3 & RF3_IM_COLD)) {
-						player_aura_dam = damroll(2,6);
-						if (r_ptr->flags9 & RF9_RES_COLD) player_aura_dam /= 3;
-						if (r_ptr->flags3 & RF3_SUSCEP_COLD) player_aura_dam *= 2;
-						msg_format(Ind, "%^s freezes for %d damage!", m_name, player_aura_dam);
-						if (mon_take_hit(Ind, m_idx, player_aura_dam, &fear,
-						    " freezes and shatters")) {
-							blinked = FALSE;
-							alive = FALSE;
-						}
-					}
-#ifdef OLD_MONSTER_LORE
-					else {
-						if (p_ptr->mon_vis[m_idx]) r_ptr->r_flags3 |= RF3_IM_COLD;
 					}
 #endif
 				}

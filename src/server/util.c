@@ -1461,6 +1461,72 @@ void sound_near_site_vol(int y, int x, worldpos *wpos, int Ind, cptr name, cptr 
 #endif
 	}
 }
+/* Send sound to all players nearby a certain area, and have no volume falloff inside the area's radius.
+   Added for earthquakes, so people outside of the quake region still hear it somewhat. - C. Blue */
+void sound_near_area(int y, int x, int rad, worldpos *wpos, cptr name, cptr alternative, int type) {
+	int i, d;
+	player_type *p_ptr;
+	int val = -1, val2 = -1;
+
+	if (name) for (i = 0; i < SOUND_MAX_2010; i++) {
+		if (!audio_sfx[i][0]) break;
+		if (!strcmp(audio_sfx[i], name)) {
+			val = i;
+			break;
+		}
+	}
+
+	if (alternative) for (i = 0; i < SOUND_MAX_2010; i++) {
+		if (!audio_sfx[i][0]) break;
+		if (!strcmp(audio_sfx[i], alternative)) {
+			val2 = i;
+			break;
+		}
+	}
+
+	if (val == -1) {
+		if (val2 != -1) {
+			/* Use the alternative instead */
+			val = val2;
+			val2 = -1;
+		} else {
+			return;
+		}
+	}
+
+	/* Check each player */
+	for (i = 1; i <= NumPlayers; i++) {
+		/* Check this player */
+		p_ptr = Players[i];
+
+		/* Make sure this player is in the game */
+		if (p_ptr->conn == NOT_CONNECTED) continue;
+
+		/* Make sure this player is at this depth */
+		if (!inarea(&p_ptr->wpos, wpos)) continue;
+
+		/* within audible range? */
+		d = distance(y, x, Players[i]->py, Players[i]->px);
+
+		/* no falloff within the area */
+		d -= rad;
+		if (d < 0) d = 0;
+
+		/* NOTE: should be consistent with msg_print_near_site() */
+		if (d > MAX_SIGHT) continue;
+
+#if 0
+		/* limit for volume calc */
+		if (d > 20) d = 20;
+		d += 3;
+		d /= 3;
+		Send_sound(i, val, val2, type, 100 / d, 0);
+#else
+		/* limit for volume calc */
+		Send_sound(i, val, val2, type, 100 - (d * 50) / 11, 0);
+#endif
+	}
+}
 /* Play sfx at full volume to everyone in a house, and at normal-distance volume to
    everyone near the door (as sound_near_site() would). */
 void sound_house_knock(int h_idx, int dx, int dy) {
@@ -1814,6 +1880,9 @@ void handle_music(int Ind) {
 		p_ptr->music_monster = -2;
 		Send_music(Ind, sector00music_dun, sector00musicalt_dun);
 		return;
+	} else if (d_ptr && !d_ptr->type && d_ptr->theme == DI_DEATH_FATE) {
+		Send_music(Ind, 98, 55); //party/halloween
+		return; //party/halloween
 	}
 
 	/* No-tele grid: Re-use 'terrifying' bgm for this */
@@ -2225,7 +2294,8 @@ void handle_ambient_sfx(int Ind, cave_type *c_ptr, struct worldpos *wpos, bool s
 	    (wild_info[wpos->wy][wpos->wx].type == WILD_LAKE || wild_info[wpos->wy][wpos->wx].bled == WILD_LAKE ||
 	    wild_info[wpos->wy][wpos->wx].type == WILD_RIVER || wild_info[wpos->wy][wpos->wx].bled == WILD_RIVER ||
 	    wild_info[wpos->wy][wpos->wx].type == WILD_SWAMP || wild_info[wpos->wy][wpos->wx].bled == WILD_SWAMP)) {
-		Send_sfx_ambient(Ind, SFX_AMBIENT_LAKE, smooth);
+		if (!cold_place(wpos)) Send_sfx_ambient(Ind, SFX_AMBIENT_LAKE, smooth);
+		else Send_sfx_ambient(Ind, SFX_AMBIENT_NONE, smooth);
 	}
 }
 
@@ -2279,25 +2349,54 @@ void process_ambient_sfx(void) {
 		case WILD_RIVER:
 		case WILD_LAKE:
 		case WILD_SWAMP:
-			if (season == SEASON_WINTER) break;
+			if (cold_place(&p_ptr->wpos)) break;
 			sound_floor_vol(&p_ptr->wpos, "animal_toad", NULL, SFX_TYPE_AMBIENT, vol);
 			w_ptr->ambient_sfx_timer = 4 + rand_int(4);
 			break;
 		case WILD_ICE:
 		case WILD_MOUNTAIN:
 		case WILD_WASTELAND:
-			if (IS_NIGHT) sound_floor_vol(&p_ptr->wpos, "animal_wolf", NULL, SFX_TYPE_AMBIENT, vol);
-			w_ptr->ambient_sfx_timer = 30 + rand_int(60);
+			if (IS_NIGHT) {
+				sound_floor_vol(&p_ptr->wpos, "animal_wolf", NULL, SFX_TYPE_AMBIENT, vol);
+				w_ptr->ambient_sfx_timer = 30 + rand_int(60);
+			} else {
+				sound_floor_vol(&p_ptr->wpos, "animal_birdofprey", NULL, SFX_TYPE_AMBIENT, vol);
+				w_ptr->ambient_sfx_timer = 30 + rand_int(60);
+			}
 			break;
-		//case WILD_SHORE:
+		case WILD_VOLCANO:
+		case WILD_DESERT:
+			if (IS_DAY) sound_floor_vol(&p_ptr->wpos, "animal_birdofprey", NULL, SFX_TYPE_AMBIENT, vol);
+			w_ptr->ambient_sfx_timer = 120 + rand_int(240); //very rarely
+			break;
+#if 0 /*  --used for both, oceans and lakes // todo: just check (wild_info[wpos->wy][wpos->wx].type == WILD_OCEAN || wild_info[wpos->wy][wpos->wx].bled == WILD_OCEAN) */
+		case WILD_SHORE1:
+		case WILD_SHORE2:
+		case WILD_COAST:
+			if (IS_DAY) sound_floor_vol(&p_ptr->wpos, "animal_seagull", NULL, SFX_TYPE_AMBIENT, vol);
+			w_ptr->ambient_sfx_timer = 120 + rand_int(240); //very rarely
+			break;
+#endif
+#if 0 /* verify whether cool (also see above, shore/coast, same for this?) */
+		case WILD_OCEANBED1:
+		case WILD_OCEANBED2:
+#endif
 		case WILD_OCEAN:
 			if (IS_DAY) sound_floor_vol(&p_ptr->wpos, "animal_seagull", NULL, SFX_TYPE_AMBIENT, vol);
 			w_ptr->ambient_sfx_timer = 30 + rand_int(60);
 			break;
+		case WILD_GRASSLAND:
+			if (IS_DAY) {
+				if (rand_int(4)) {
+					if (!cold_place(&p_ptr->wpos)) sound_floor_vol(&p_ptr->wpos, "animal_bird", NULL, SFX_TYPE_AMBIENT, vol);
+				} else sound_floor_vol(&p_ptr->wpos, "animal_birdofprey", NULL, SFX_TYPE_AMBIENT, vol);
+				w_ptr->ambient_sfx_timer = 120 + rand_int(240); //very rarely
+			}
+			break;
 		case WILD_FOREST:
 		case WILD_DENSEFOREST:
 			if (IS_DAY) {
-				if (season == SEASON_WINTER) {
+				if (cold_place(&p_ptr->wpos)) {
 					sound_floor_vol(&p_ptr->wpos, "animal_wolf", NULL, SFX_TYPE_AMBIENT, vol);
 					w_ptr->ambient_sfx_timer = 30 + rand_int(60);
 				} else {
@@ -2905,6 +3004,24 @@ void msg_broadcast(int Ind, cptr msg) {
 		msg_print(i, msg);
 	 }
 }
+/* Same as msg_broadcast() but takes both a censored and an uncensored message and chooses per recipient. */
+void msg_broadcast2(int Ind, cptr msg, cptr msg_u) {
+	int i;
+
+	/* Tell every player */
+	for (i = 1; i <= NumPlayers; i++) {
+		/* Skip disconnected players */
+		if (Players[i]->conn == NOT_CONNECTED) 
+			continue;
+
+		/* Skip the specified player */
+		if (i == Ind)
+			continue;
+
+		/* Tell this one */
+		msg_print(i, Players[i]->censor_swearing ? msg : msg_u);
+	 }
+}
 
 void msg_admins(int Ind, cptr msg) {
 	int i;
@@ -3033,6 +3150,7 @@ void floor_msg_format(struct worldpos *wpos, cptr fmt, ...) {
 /*
  * Send a message to everyone on a floor, considering ignorance.
  */
+#if 0 /* currently unused, just killing compiler warning.. */
 static void floor_msg_ignoring(int sender, struct worldpos *wpos, cptr msg) {
 	int i;
 
@@ -3045,9 +3163,23 @@ static void floor_msg_ignoring(int sender, struct worldpos *wpos, cptr msg) {
 		if (inarea(wpos, &Players[i]->wpos)) msg_print(i, msg);
 	}
 }
+#endif
+static void floor_msg_ignoring2(int sender, struct worldpos *wpos, cptr msg, cptr msg_u) {
+	int i;
+
+	if(cfg.log_u) s_printf("(%d,%d,%d)%s\n", wpos->wx, wpos->wy, wpos->wz, msg + 2);// Players[sender]->name, msg);
+	/* Check for this guy */
+	for (i = 1; i <= NumPlayers; i++) {
+		if (Players[i]->conn == NOT_CONNECTED) continue;
+		if (check_ignore(i, sender)) continue;
+		/* Check this guy */
+		if (inarea(wpos, &Players[i]->wpos)) msg_print(i, Players[i]->censor_swearing ? msg : msg_u);
+	}
+}
 /*
  * Send a formatted message to everyone on a floor, considering ignorance.
  */
+#if 0 /* currently unused, just killing compiler warning.. */
 static void floor_msg_format_ignoring(int sender, struct worldpos *wpos, cptr fmt, ...) {
 	va_list vp;
 	char buf[1024];
@@ -3061,7 +3193,7 @@ static void floor_msg_format_ignoring(int sender, struct worldpos *wpos, cptr fm
 	/* Display */
 	floor_msg_ignoring(sender, wpos, buf);
 }
-
+#endif
 /*
  * Send a message to everyone on the world surface. (for season change)
  */
@@ -3117,6 +3249,38 @@ void msg_print_near(int Ind, cptr msg) {
 		}
 	}
 }
+void msg_print_near2(int Ind, cptr msg, cptr msg_u) {
+	player_type *p_ptr = Players[Ind];
+	int y, x, i;
+	struct worldpos *wpos;
+
+	wpos = &p_ptr->wpos;
+	if (p_ptr->admin_dm) return;
+
+	y = p_ptr->py;
+	x = p_ptr->px;
+
+	/* Check each player */
+	for (i = 1; i <= NumPlayers; i++) {
+		/* Check this player */
+		p_ptr = Players[i];
+
+		/* Make sure this player is in the game */
+		if (p_ptr->conn == NOT_CONNECTED) continue;
+
+		/* Don't send the message to the player who caused it */
+		if (Ind == i) continue;
+
+		/* Make sure this player is at this depth */
+		if (!inarea(&p_ptr->wpos, wpos)) continue;
+
+		/* Can he see this player? */
+		if (p_ptr->cave_flag[y][x] & CAVE_VIEW) {
+			/* Send the message */
+			msg_print(i, p_ptr->censor_swearing ? msg : msg_u);
+		}
+	}
+}
 
 /* Whispering: Send message to adjacent players */
 void msg_print_verynear(int Ind, cptr msg) {
@@ -3148,6 +3312,38 @@ void msg_print_verynear(int Ind, cptr msg) {
 		if (abs(p_ptr->py - y) <= 1 && abs(p_ptr->px - x) <= 1) {
 			/* Send the message */
 			msg_print(i, msg);
+		}
+	}
+}
+void msg_print_verynear2(int Ind, cptr msg, cptr msg_u) {
+	player_type *p_ptr = Players[Ind];
+	int y, x, i;
+	struct worldpos *wpos;
+	wpos = &p_ptr->wpos;
+
+	//if(p_ptr->admin_dm) return;
+
+	y = p_ptr->py;
+	x = p_ptr->px;
+
+	/* Check each player */
+	for (i = 1; i <= NumPlayers; i++) {
+		/* Check this player */
+		p_ptr = Players[i];
+
+		/* Make sure this player is in the game */
+		if (p_ptr->conn == NOT_CONNECTED) continue;
+
+		/* Don't send the message to the player who caused it */
+		if (Ind == i) continue;
+
+		/* Make sure this player is at this depth */
+		if (!inarea(&p_ptr->wpos, wpos)) continue;
+
+		/* Is he in range? */
+		if (abs(p_ptr->py - y) <= 1 && abs(p_ptr->px - x) <= 1) {
+			/* Send the message */
+			msg_print(i, p_ptr->censor_swearing ? msg : msg_u);
 		}
 	}
 }
@@ -3363,6 +3559,30 @@ void msg_party_format(int Ind, cptr fmt, ...) {
 		msg_print(i, buf);
 	 }
 }
+/* send a message to all online party members */
+void msg_party_print(int Ind, cptr msg, cptr msg_u) {
+	int i;
+
+	/* Tell every player */
+	for (i = 1; i <= NumPlayers; i++) {
+		/* Skip disconnected players */
+		if (Players[i]->conn == NOT_CONNECTED) 
+			continue;
+
+#if 0
+		/* Skip the specified player */
+		if (i == Ind)
+			continue;
+#endif
+
+		/* skip players not in his party */
+		if (Players[i]->party != Players[Ind]->party)
+			continue;
+
+		/* Tell this one */
+		msg_print(i, Players[i]->censor_swearing ? msg : msg_u);
+	 }
+}
 
 /* send a message to all online guild members */
 void msg_guild_format(int Ind, cptr fmt, ...) {
@@ -3395,6 +3615,30 @@ void msg_guild_format(int Ind, cptr fmt, ...) {
 
 		/* Tell this one */
 		msg_print(i, buf);
+	 }
+}
+/* send a message to all online guild members */
+void msg_guild_print(int Ind, cptr msg, cptr msg_u) {
+	int i;
+
+	/* Tell every player */
+	for (i = 1; i <= NumPlayers; i++) {
+		/* Skip disconnected players */
+		if (Players[i]->conn == NOT_CONNECTED) 
+			continue;
+
+#if 0
+		/* Skip the specified player */
+		if (i == Ind)
+			continue;
+#endif
+
+		/* skip players not in his guild */
+		if (Players[i]->guild != Players[Ind]->guild)
+			continue;
+
+		/* Tell this one */
+		msg_print(i, Players[i]->censor_swearing ? msg : msg_u);
 	 }
 }
 
@@ -3937,6 +4181,7 @@ static int censor_aux(char *buf, char *lcopy, int *c, bool leet, bool max_reduce
 
 	/* check for swear words and censor them */
 	for (i = 0; swear[i].word[0]; i++) {
+		if (!swear[i].level) continue;
 		offset = 0;
 
 		/* check for multiple occurrances of this swear word */
@@ -4295,6 +4540,7 @@ int handle_censor(char *line) {
 	    (word = strstr(lcopy2, "ashoie")))
 		/* use severity level of 'ashole' (condensed) for 'asshole' */
 		for (i = 0; swear[i].word[0]; i++) {
+			if (!swear[i].level) continue;
 			if (!strcmp(swear[i].word, "ashole")) {
 				j_pre = swear[i].level;
 				/* if it was to get censored, do so */
@@ -4445,13 +4691,15 @@ int handle_censor(char *line) {
 /* Handle punishment after running handle_censor() to determine the severity of a swearing word =p */
 void handle_punish(int Ind, int level) {
 	switch (level) {
-	case 0:
+	case 0: //nothing to censor
 		break;
-	case 1:
+	case 1: //censored, but no punishment for this
+		break;
+	case 2: //light punishment: reminder
 		msg_print(Ind, "Please do not swear.");
 		break;
-	default:
-		imprison(Ind, level * JAIL_SWEARING, "swearing");
+	default: //normal/heavy punishment: go to jail
+		imprison(Ind, (level - 2) * JAIL_SWEARING, "swearing");
 	}
 }
 #else
@@ -4474,12 +4722,13 @@ void handle_punish(int Ind, int level) return 0;
  * through /mute <name> and disabled through /unmute <name>).
  *				- the_sandman
  */
+#define UNPUNISHED_WHISPER /* Swearing in whispers doesn't get punished (but still censored depending on target's censor_swearing setting) */
 static void player_talk_aux(int Ind, char *message) {
 	int i, len, target = 0, target_raw_len = 0;
 	char search[MSG_LEN], sender[MAX_CHARS];
-	char message2[MSG_LEN], message_uncensored[MSG_LEN];
+	char message2[MSG_LEN], message_u[MSG_LEN];
 	player_type *p_ptr = NULL, *q_ptr;
-	char *colon;
+	char *colon, *colon_u;
 	bool rp_me = FALSE, rp_me_gen = FALSE, log = TRUE, nocolon = FALSE;
 	char c_n = 'B'; /* colours of sender name and of brackets (unused atm) around this name */
 #ifdef KURZEL_PK
@@ -4488,12 +4737,17 @@ static void player_talk_aux(int Ind, char *message) {
 	int mycolor = 0;
 	bool admin = FALSE;
 	bool broadcast = FALSE;
-	bool slash_command = FALSE, slash_command_msg = FALSE, slash_command_censorable = FALSE, is_public = TRUE;
+	bool slash_command = FALSE, slash_command_msg = FALSE, slash_command_censorable = FALSE;
+#ifndef ARCADE_SERVER
+	bool is_public = TRUE;
+#endif
 	char messagelc[MSG_LEN];
 #ifdef TOMENET_WORLDS
 	char tmessage[MSG_LEN];		/* TEMPORARY! We will not send the name soon */
+	char tmessage_u[MSG_LEN];
 #endif
 	int censor_punish = 0;
+	bool censor;
 
 
 	if (!Ind) {
@@ -4503,6 +4757,7 @@ static void player_talk_aux(int Ind, char *message) {
 
 	/* Get sender's name */
 	p_ptr = Players[Ind];
+	censor = p_ptr->censor_swearing;
 	/* Get player name */
 	strcpy(sender, p_ptr->name);
 	admin = is_admin(p_ptr);
@@ -4753,7 +5008,9 @@ static void player_talk_aux(int Ind, char *message) {
 			    || prefix(messagelc, "/pnote ") || prefix(messagelc, "/gnote ")
 			    || prefix(messagelc, "/pbbs ") || prefix(messagelc, "/gbbs ")) {
 				slash_command_msg = TRUE;
+#ifndef ARCADE_SERVER
 				is_public = FALSE;
+#endif
 			}
 			/* Is it a slash command that results in actual output readable by others? */
 			if (prefix(messagelc, "/info ")
@@ -4761,7 +5018,9 @@ static void player_talk_aux(int Ind, char *message) {
 				slash_command_censorable = TRUE;
 		}
 	}
+#ifndef ARCADE_SERVER
 	if (colon) is_public = FALSE;
+#endif
 
 #ifndef ARCADE_SERVER
 	if (is_public /* Only prevent spam if not in party/private chat */
@@ -4813,11 +5072,14 @@ static void player_talk_aux(int Ind, char *message) {
 		Players[i]->talk = 0;
 	}
 
-	/* Check for nasty language in public chat */
-	if (is_public && (!slash_command || slash_command_msg || slash_command_censorable)) {
+	/* Keep uncensored message for everyone who disabled censoring */
+	strcpy(message_u, message);
+
+	/* Check for nasty language in chat/messaging */
+	if (//is_public &&
+	    (!slash_command || slash_command_msg || slash_command_censorable)) {
 		char *c = strchr(message, ' ');
 		/* Apply censorship and its penalty and keep uncensored version for those who wish to get uncensored information */
-		strcpy(message_uncensored, message);
 		/* Censor and get level of punishment. (Note: This if/else isn't really needed, we could just censor the complete message always..) */
 		if (!slash_command) censor_punish = handle_censor(message); /* For chat, censor the complete message. */
 		/* For commands, we can skip the actual command, just in caaaase part of the command somehow mixes up with the message to false-positive-trigger the censor check oO (paranoia?) */
@@ -4828,7 +5090,7 @@ static void player_talk_aux(int Ind, char *message) {
 	}
 
 	if (slash_command) {
-		do_slash_cmd(Ind, message, message_uncensored);
+		do_slash_cmd(Ind, message, message_u);
 		handle_punish(Ind, censor_punish);
 		return;
 	}
@@ -4854,11 +5116,13 @@ static void player_talk_aux(int Ind, char *message) {
 #ifdef GROUP_CHAT_NOCLUTTER
 			/* prevent buffer overflow */
 			message[MSG_LEN - 1 - 10 - strlen(sender)] = 0;
-			party_msg_format_ignoring(Ind, target, "\375\377%c[(P) %s] %s", COLOUR_CHAT_PARTY, sender, message + 2);
+			message_u[MSG_LEN - 1 - 10 - strlen(sender)] = 0;
+			party_msg_ignoring2(Ind, target, format("\375\377%c[(P) %s] %s", COLOUR_CHAT_PARTY, sender, message + 2), format("\375\377%c[(P) %s] %s", COLOUR_CHAT_PARTY, sender, message_u + 2));
 #else
 			/* prevent buffer overflow */
 			message[MSG_LEN - 1 - 7 - strlen(sender) - strlen(parties[target].name)] = 0;
-			party_msg_format_ignoring(Ind, target, "\375\377%c[%s:%s] %s", COLOUR_CHAT_PARTY, parties[target].name, sender, message + 2);
+			message_u[MSG_LEN - 1 - 7 - strlen(sender) - strlen(parties[target].name)] = 0;
+			party_msg_ignoring2(Ind, target, format("\375\377%c[%s:%s] %s", COLOUR_CHAT_PARTY, parties[target].name, sender, message + 2), format("\375\377%c[%s:%s] %s", COLOUR_CHAT_PARTY, parties[target].name, sender, message_u + 2));
 #endif
 		}
 
@@ -4883,8 +5147,9 @@ static void player_talk_aux(int Ind, char *message) {
 			if (*(message + 2)) {
 				/* prevent buffer overflow */
 				message[MSG_LEN - 1 + 2 - strlen(p_ptr->name) - 9] = 0;
-				msg_format_near(Ind, "\377%c%^s says: %s", COLOUR_CHAT, p_ptr->name, message + 2);
-				msg_format(Ind, "\377%cYou say: %s", COLOUR_CHAT, message + 2);
+				message_u[MSG_LEN - 1 + 2 - strlen(p_ptr->name) - 9] = 0;
+				msg_print_near2(Ind, format("\377%c%^s says: %s", COLOUR_CHAT, p_ptr->name, message + 2), format("\377%c%^s says: %s", COLOUR_CHAT, p_ptr->name, message_u + 2));
+				msg_format(Ind, "\377%cYou say: %s", COLOUR_CHAT, censor ? message + 2 : message_u + 2);
 				handle_punish(Ind, censor_punish);
 			} else {
 				msg_format_near(Ind, "\377%c%s clears %s throat.", COLOUR_CHAT, p_ptr->name, p_ptr->male ? "his" : "her");
@@ -4898,7 +5163,8 @@ static void player_talk_aux(int Ind, char *message) {
 		if (p_ptr->mutedchat < 2) {
 			/* prevent buffer overflow */
 			message[MSG_LEN - 1 + 2 - strlen(sender) - 6] = 0;
-			floor_msg_format_ignoring(Ind, &p_ptr->wpos, "\375\377%c[%s] %s", COLOUR_CHAT_LEVEL, sender, message + 2);
+			message_u[MSG_LEN - 1 + 2 - strlen(sender) - 6] = 0;
+			floor_msg_ignoring2(Ind, &p_ptr->wpos, format("\375\377%c[%s] %s", COLOUR_CHAT_LEVEL, sender, message + 2), format("\375\377%c[%s] %s", COLOUR_CHAT_LEVEL, sender, message_u + 2));
 			handle_punish(Ind, censor_punish);
 		}
 
@@ -4929,6 +5195,10 @@ static void player_talk_aux(int Ind, char *message) {
 		strcpy(message, message2);
 		colon = message + strlen(p_ptr->reply_name);
 
+		strcpy(message2, p_ptr->reply_name);
+		strcat(message2, message_u + 1);
+		strcpy(message_u, message2);
+
 		/* Continue with forged private message */
 	}
 
@@ -4946,11 +5216,17 @@ static void player_talk_aux(int Ind, char *message) {
 #ifdef GROUP_CHAT_NOCLUTTER
 			/* prevent buffer overflow */
 			message[MSG_LEN - 1 + 2 - strlen(sender) - 16] = 0;
-			guild_msg_format_ignoring(Ind, p_ptr->guild, "\375\377y[\377%c(G) %s\377y]\377%c %s", COLOUR_CHAT_GUILD, sender, COLOUR_CHAT_GUILD, message + 2);
+			message_u[MSG_LEN - 1 + 2 - strlen(sender) - 16] = 0;
+			guild_msg_ignoring2(Ind, p_ptr->guild,
+			    format("\375\377y[\377%c(G) %s\377y]\377%c %s", COLOUR_CHAT_GUILD, sender, COLOUR_CHAT_GUILD, message + 2),
+			    format("\375\377y[\377%c(G) %s\377y]\377%c %s", COLOUR_CHAT_GUILD, sender, COLOUR_CHAT_GUILD, message_u + 2));
 #else
 			/* prevent buffer overflow */
 			message[MSG_LEN - 1 + 2 - strlen(sender) - strlen(guilds[p_ptr->guild].name) - 18] = 0;
-			guild_msg_format_ignoring(Ind, p_ptr->guild, "\375\377y[\377%c%s\377y:\377%c%s\377y]\377%c %s", COLOUR_CHAT_GUILD, guilds[p_ptr->guild].name, COLOUR_CHAT_GUILD, sender, COLOUR_CHAT_GUILD, message + 2);
+			message_u[MSG_LEN - 1 + 2 - strlen(sender) - strlen(guilds[p_ptr->guild].name) - 18] = 0;
+			guild_msg_ignoring2(Ind, p_ptr->guild,
+			    format("\375\377y[\377%c%s\377y:\377%c%s\377y]\377%c %s", COLOUR_CHAT_GUILD, guilds[p_ptr->guild].name, COLOUR_CHAT_GUILD, sender, COLOUR_CHAT_GUILD, message + 2),
+			    format("\375\377y[\377%c%s\377y:\377%c%s\377y]\377%c %s", COLOUR_CHAT_GUILD, guilds[p_ptr->guild].name, COLOUR_CHAT_GUILD, sender, COLOUR_CHAT_GUILD, message + 2));
 #endif
 		}
 
@@ -4976,6 +5252,10 @@ static void player_talk_aux(int Ind, char *message) {
 		search[colon - message] = '\0';
 	} else if (p_ptr->mutedchat) return;
 
+	/* From here on we need colon_u */
+	if (colon) colon_u = message_u + (colon - message);
+	else colon_u = NULL;
+
 	/* Acquire length of search string */
 	len = strlen(search);
 
@@ -4997,16 +5277,17 @@ static void player_talk_aux(int Ind, char *message) {
  #if 0
 				msg_format(Ind, "\375\377s[%s:%s] %s", p_ptr->name, w_player->name, colon + 1);
  #else /* world server handles the colour codes */
-				msg_format(Ind, "\375[%s:%s] %s", p_ptr->name, w_player->name, colon + 1);
+				msg_format(Ind, "\375[%s:%s] %s", p_ptr->name, w_player->name, censor ? colon + 1 : colon_u + 1);
  #endif
 
 				/* hack: assume that the target player will become the
 				   one we want to 'reply' to, afterwards, if we don't
 				   have a reply-to target yet. */
-				if (!strlen(p_ptr->reply_name))
-					strcpy(p_ptr->reply_name, w_player->name);
+				if (!strlen(p_ptr->reply_name)) strcpy(p_ptr->reply_name, w_player->name);
 
+ #ifndef UNPUNISHED_WHISPER
 				handle_punish(Ind, censor_punish);
+ #endif
 				return;
 			}
 		}
@@ -5016,7 +5297,10 @@ static void player_talk_aux(int Ind, char *message) {
 /* no, this isn't needed and actually has annoying effects if you try to write smileys:
 		while (*colon && (isspace(*colon) || *colon == ':')) colon++; */
 /* instead, this is sufficient: */
-		if (colon) colon++;
+		if (colon) {
+			colon++;
+			colon_u++;
+		}
 
 		/* lookup failed */
 		if (!target) {
@@ -5053,9 +5337,10 @@ static void player_talk_aux(int Ind, char *message) {
 
 			/* prevent buffer overflow */
 			message[MSG_LEN - strlen(sender) - 7 - strlen(q_ptr->name) + target_raw_len] = 0;
+			message_u[MSG_LEN - strlen(sender) - 7 - strlen(q_ptr->name) + target_raw_len] = 0;
 
 			/* Send message to target */
-			msg_format(target, "\375\377g[%s:%s] %s", sender, q_ptr->name, colon);
+			msg_format(target, "\375\377g[%s:%s] %s", sender, q_ptr->name, q_ptr->censor_swearing ? colon : colon_u);
 			if ((q_ptr->page_on_privmsg ||
 			    (q_ptr->page_on_afk_privmsg && q_ptr->afk)) &&
 			    q_ptr->paging == 0)
@@ -5063,7 +5348,7 @@ static void player_talk_aux(int Ind, char *message) {
 
 			/* Also send back to sender */
 			if (target != Ind)
-				msg_format(Ind, "\375\377g[%s:%s] %s", sender, q_ptr->name, colon);
+				msg_format(Ind, "\375\377g[%s:%s] %s", sender, q_ptr->name, censor ? colon : colon_u);
 
 			/* Only display this message once now - mikaelh */
 			if (q_ptr->afk && !player_list_find(p_ptr->afk_noticed, q_ptr->id)) {
@@ -5092,8 +5377,10 @@ static void player_talk_aux(int Ind, char *message) {
  #endif
 #endif
 
-			exec_lua(0, "chat_handler()");
+#ifndef UNPUNISHED_WHISPER
+			//exec_lua(0, "chat_handler()");
 			handle_punish(Ind, censor_punish);
+#endif
 			return;
 		} else {
 #if 1 /* keep consistent with paging */
@@ -5104,15 +5391,13 @@ static void player_talk_aux(int Ind, char *message) {
 		}
 	}
 
-	/* Send to appropriate party - only available to admins if not actually a member of party
+	/* Send to appropriate party - only available to admins
 	   Hm, maybe this stuff could just be deleted, could maybe unnecessarily interfere with private messaging, if player has similar name as a party?.. */
 	if (len && target < 0) {
-		/* Can't send msg to party from 'outside' as non-admin */
-		if (p_ptr->party != 0 - target && !admin) {
-			msg_print(Ind, "You aren't in that party.");
+		if (!admin) {
+			msg_print(Ind, "Use !: chat prefix or hit TAB key in the chat prompt to talk to your party.");
 			return;
 		}
-
 #ifdef GROUP_CHAT_NOCLUTTER
 		/* prevent buffer overflow */
 		message[MSG_LEN - strlen(sender) - 10] = 0;
@@ -5173,14 +5458,18 @@ static void player_talk_aux(int Ind, char *message) {
 		/* prevent buffer overflow */
 		message[MSG_LEN - 1 - strlen(sender) - 12 + 11] = 0;
 		snprintf(tmessage, sizeof(tmessage), "\375\377r[\377%c%s\377r]\377%c %s", c_n, sender, COLOUR_CHAT, message + 11);
+		message_u[MSG_LEN - 1 - strlen(sender) - 12 + 11] = 0;
+		snprintf(tmessage_u, sizeof(tmessage_u), "\375\377r[\377%c%s\377r]\377%c %s", c_n, sender, COLOUR_CHAT, message_u + 11);
 	} else if (!rp_me) {
 		/* prevent buffer overflow */
 		message[MSG_LEN - 1 - strlen(sender) - 8 + mycolor] = 0;
+		message_u[MSG_LEN - 1 - strlen(sender) - 8 + mycolor] = 0;
 
  #ifndef KURZEL_PK
 		snprintf(tmessage, sizeof(tmessage), "\375\377%c[%s]\377%c %s", c_n, sender, COLOUR_CHAT, message + mycolor);
+		snprintf(tmessage_u, sizeof(tmessage_u), "\375\377%c[%s]\377%c %s", c_n, sender, COLOUR_CHAT, message_u + mycolor);
  #else
-		snprintf(tmessage, sizeof(tmessage), "\375\377%c[\377%c%s\377%c]\377%c %s", c_b, c_n, sender, c_b, COLOUR_CHAT, message + mycolor);
+		snprintf(tmessage_u, sizeof(tmessage_u), "\375\377%c[\377%c%s\377%c]\377%c %s", c_b, c_n, sender, c_b, COLOUR_CHAT, message_u + mycolor);
  #endif
 	} else {
 		/* Why not... */
@@ -5190,17 +5479,22 @@ static void player_talk_aux(int Ind, char *message) {
 
 		/* prevent buffer overflow */
 		message[MSG_LEN - 1 - strlen(sender) - 10 + 4 + mycolor] = 0;
+		message_u[MSG_LEN - 1 - strlen(sender) - 10 + 4 + mycolor] = 0;
 		if (rp_me_gen) {
  #ifndef KURZEL_PK
 			snprintf(tmessage, sizeof(tmessage), "\375\377%c[%s%s]", c_n, sender, message + 3 + mycolor);
+			snprintf(tmessage_u, sizeof(tmessage_u), "\375\377%c[%s%s]", c_n, sender, message_u + 3 + mycolor);
  #else
 			snprintf(tmessage, sizeof(tmessage), "\375\377%c[\377%c%s%s\377%c]", c_b, c_n, sender, message + 3 + mycolor, c_b);
+			snprintf(tmessage_u, sizeof(tmessage_u), "\375\377%c[\377%c%s%s\377%c]", c_b, c_n, sender, message_u + 3 + mycolor, c_b);
  #endif
 		} else {
  #ifndef KURZEL_PK
 			snprintf(tmessage, sizeof(tmessage), "\375\377%c[%s %s]", c_n, sender, message + 4 + mycolor);
+			snprintf(tmessage_u, sizeof(tmessage_u), "\375\377%c[%s %s]", c_n, sender, message_u + 4 + mycolor);
  #else
 			snprintf(tmessage, sizeof(tmessage), "\375\377%c[\377%c%s %s\377%c]", c_b, c_n, sender, message + 4 + mycolor, c_b);
+			snprintf(tmessage_u, sizeof(tmessage_u), "\375\377%c[\377%c%s %s\377%c]", c_b, c_n, sender, message_u + 4 + mycolor, c_b);
  #endif
 		}
 	}
@@ -5225,7 +5519,7 @@ static void player_talk_aux(int Ind, char *message) {
 			if (!broadcast && (p_ptr->limit_chat || q_ptr->limit_chat) &&
 			    !inarea(&p_ptr->wpos, &q_ptr->wpos)) continue;
 		}
-		msg_print(i, tmessage);
+		msg_print(i, q_ptr->censor_swearing ? tmessage : tmessage_u);
 	}
 #else
 	/* Send to everyone */
@@ -5243,22 +5537,25 @@ static void player_talk_aux(int Ind, char *message) {
 		if (broadcast) {
 			/* prevent buffer overflow */
 			message[MSG_LEN - 1 - strlen(sender) - 12 + 11] = 0;
-			msg_format(i, "\375\377r[\377%c%s\377r]\377%c %s", c_n, sender, COLOUR_CHAT, message + 11);
+			message_u[MSG_LEN - 1 - strlen(sender) - 12 + 11] = 0;
+			msg_format(i, "\375\377r[\377%c%s\377r]\377%c %s", c_n, sender, COLOUR_CHAT, q_ptr->censor_swearing ? message + 11 : message_u + 11);
 		} else if (!rp_me) {
 			/* prevent buffer overflow */
 			message[MSG_LEN - 1 - strlen(sender) - 12 + mycolor] = 0;
+			message_u[MSG_LEN - 1 - strlen(sender) - 12 + mycolor] = 0;
  #ifndef KURZEL_PK
-			msg_format(i, "\375\377%c[%s]\377%c %s", c_n, sender, COLOUR_CHAT, message + mycolor);
+			msg_format(i, "\375\377%c[%s]\377%c %s", c_n, sender, COLOUR_CHAT, q_ptr->censor_swearing ? message + mycolor : message_u + mycolor);
  #else
-			msg_format(i, "\375\377%c[\377%c%s\377%c]\377%c %s", c_b, c_n, sender, c_b, COLOUR_CHAT, message + mycolor);
+			msg_format(i, "\375\377%c[\377%c%s\377%c]\377%c %s", c_b, c_n, sender, c_b, COLOUR_CHAT, q_ptr->censor_swearing ? message + mycolor : message_u + mycolor);
  #endif
 			/* msg_format(i, "\375\377%c[%s] %s", Ind ? 'B' : 'y', sender, message); */
 		}
 		else {
 			/* prevent buffer overflow */
 			message[MSG_LEN - 1 - strlen(sender) - 1 + 4] = 0;
-			if (rp_me_gen) msg_format(i, "%s%s", sender, message + 3);
-			else msg_format(i, "%s %s", sender, message + 4);
+			message_u[MSG_LEN - 1 - strlen(sender) - 1 + 4] = 0;
+			if (rp_me_gen) msg_format(i, "%s%s", sender, q_ptr->censor_swearing ? message + 3 : message_u + 3);
+			else msg_format(i, "%s %s", sender, q_ptr->censor_swearing ? message + 4 : message_u + 4);
 		}
 	}
 #endif
@@ -6264,7 +6561,7 @@ void lua_intrusion(int Ind, char *problem_diz) {
 #endif
 }
 
-void bbs_add_line(cptr textline) {
+void bbs_add_line(cptr textline, cptr textline_u) {
 	int i, j;
 	/* either find an empty bbs entry (store its position in j) */
 	for (i = 0; i < BBS_LINES; i++)
@@ -6272,10 +6569,13 @@ void bbs_add_line(cptr textline) {
 	j = i;
 	/* or scroll up by one line, discarding the first line */
 	if (i == BBS_LINES)
-		for (j = 0; j < BBS_LINES - 1; j++)
+		for (j = 0; j < BBS_LINES - 1; j++) {
 			strcpy(bbs_line[j], bbs_line[j + 1]);
+			strcpy(bbs_line_u[j], bbs_line_u[j + 1]);
+		}
 	/* write the line to the bbs */
 	strncpy(bbs_line[j], textline, MAX_CHARS_WIDE - 3); /* lines get one leading spaces on outputting, so it's 78-1  //  was 77 */
+	strncpy(bbs_line_u[j], textline_u, MAX_CHARS_WIDE - 3); /* lines get one leading spaces on outputting, so it's 78-1  //  was 77 */
 }
 
 void bbs_del_line(int entry) {
@@ -6294,7 +6594,7 @@ void bbs_erase(void) {
 		strcpy(bbs_line[i], "");
 }
 
-void pbbs_add_line(u16b party, cptr textline) {
+void pbbs_add_line(u16b party, cptr textline, cptr textline_u) {
 	int i, j;
 	/* either find an empty bbs entry (store its position in j) */
 	for (i = 0; i < BBS_LINES; i++)
@@ -6302,13 +6602,16 @@ void pbbs_add_line(u16b party, cptr textline) {
 	j = i;
 	/* or scroll up by one line, discarding the first line */
 	if (i == BBS_LINES)
-		for (j = 0; j < BBS_LINES - 1; j++)
+		for (j = 0; j < BBS_LINES - 1; j++) {
 			strcpy(pbbs_line[party][j], pbbs_line[party][j + 1]);
+			strcpy(pbbs_line_u[party][j], pbbs_line_u[party][j + 1]);
+		}
 	/* write the line to the bbs */
 	strncpy(pbbs_line[party][j], textline, MAX_CHARS_WIDE - 3);
+	strncpy(pbbs_line_u[party][j], textline_u, MAX_CHARS_WIDE - 3);
 }
 
-void gbbs_add_line(byte guild, cptr textline) {
+void gbbs_add_line(byte guild, cptr textline, cptr textline_u) {
 	int i, j;
 	/* either find an empty bbs entry (store its position in j) */
 	for (i = 0; i < BBS_LINES; i++)
@@ -6316,10 +6619,13 @@ void gbbs_add_line(byte guild, cptr textline) {
 	j = i;
 	/* or scroll up by one line, discarding the first line */
 	if (i == BBS_LINES)
-		for (j = 0; j < BBS_LINES - 1; j++)
+		for (j = 0; j < BBS_LINES - 1; j++) {
 			strcpy(gbbs_line[guild][j], gbbs_line[guild][j + 1]);
+			strcpy(gbbs_line_u[guild][j], gbbs_line_u[guild][j + 1]);
+		}
 	/* write the line to the bbs */
 	strncpy(gbbs_line[guild][j], textline, MAX_CHARS_WIDE - 3);
+	strncpy(gbbs_line_u[guild][j], textline_u, MAX_CHARS_WIDE - 3);
 }
 
 
@@ -6400,83 +6706,6 @@ void player_list_free(player_list_type *list) {
 		pl_ptr = pl_ptr->next;
 		FREE(tmp, player_list_type);
 	}
-}
-
-/*
- * Check if the client version fills the requirements.
- *
- * Branch has to be an exact match.
- */
-bool is_newer_than(version_type *version, int major, int minor, int patch, int extra, int branch, int build) {
-	if (version->major < major)
-		return FALSE; /* very old */
-	else if (version->major > major)
-		return TRUE; /* very new */
-	else if (version->minor < minor)
-		return FALSE; /* pretty old */
-	else if (version->minor > minor)
-		return TRUE; /* pretty new */
-	else if (version->patch < patch)
-		return FALSE; /* somewhat old */
-	else if (version->patch > patch)
-		return TRUE; /* somewhat new */
-	else if (version->extra < extra)
-		return FALSE; /* a little older */
-	else if (version->extra > extra)
-		return TRUE; /* a little newer */
-	/* Check that the branch is an exact match */
-	else if (version->branch == branch) {
-		/* Now check the build */
-		if (version->build < build)
-			return FALSE;
-		else if (version->build > build)
-			return TRUE;
-	}
-
-	/* Default */
-	return FALSE;
-}
-
-bool is_older_than(version_type *version, int major, int minor, int patch, int extra, int branch, int build) {
-	if (version->major > major)
-		return FALSE; /* very new */
-	else if (version->major < major)
-		return TRUE; /* very old */
-	else if (version->minor > minor)
-		return FALSE; /* pretty new */
-	else if (version->minor < minor)
-		return TRUE; /* pretty old */
-	else if (version->patch > patch)
-		return FALSE; /* somewhat new */
-	else if (version->patch < patch)
-		return TRUE; /* somewhat old */
-	else if (version->extra > extra)
-		return FALSE; /* a little newer */
-	else if (version->extra < extra)
-		return TRUE; /* a little older */
-	/* Check that the branch is an exact match */
-	else if (version->branch == branch) {
-		/* Now check the build */
-		if (version->build > build)
-			return FALSE;
-		else if (version->build < build)
-			return TRUE;
-	}
-
-	/* Default */
-	return FALSE;
-}
-
-bool is_same_as(version_type *version, int major, int minor, int patch, int extra, int branch, int build) {
-	if (version->major == major
-	    && version->minor == minor
-	    && version->patch == patch
-	    && version->extra == extra
-	    && version->branch == branch
-	    && version->build == build)
-		return TRUE;
-
-	return FALSE;
 }
 
 /*
@@ -7119,7 +7348,27 @@ cptr flags_str(u32b flags) {
 #endif
 }
 
-/* get player's racial attribute */
+/* get player's racial attribute - return empty string if race is forced by class. */
+cptr get_prace2(player_type *p_ptr) {
+#ifdef ENABLE_MAIA
+	if (p_ptr->prace == RACE_MAIA && p_ptr->ptrait) {
+		if (p_ptr->ptrait == TRAIT_ENLIGHTENED)
+			return "Enlightened ";
+		else if (p_ptr->ptrait == TRAIT_CORRUPTED) {
+ #ifdef ENABLE_HELLKNIGHT
+			if (p_ptr->pclass == CLASS_HELLKNIGHT) return ""; else
+ #endif
+			return "Corrupted ";
+		} else
+			return special_prace_lookup2[p_ptr->prace];
+	} else
+#endif
+#ifdef ENABLE_DEATHKNIGHT
+	if (p_ptr->pclass == CLASS_DEATHKNIGHT) return ""; else
+#endif
+	return special_prace_lookup2[p_ptr->prace];
+}
+/* like get_prace2(), but always returns the race. Also, no trailing space. */
 cptr get_prace(player_type *p_ptr) {
 #ifdef ENABLE_MAIA
 	if (p_ptr->prace == RACE_MAIA && p_ptr->ptrait) {
@@ -7313,7 +7562,7 @@ bool gain_au(int Ind, u32b amt, bool quiet, bool exempt) {
 	if (p_ptr->gold_picked_up <= EVENT_TOWNIE_GOLD_LIMIT) {
 		p_ptr->gold_picked_up += (amt > EVENT_TOWNIE_GOLD_LIMIT) ? EVENT_TOWNIE_GOLD_LIMIT : amt;
 		if (p_ptr->gold_picked_up > EVENT_TOWNIE_GOLD_LIMIT
-		    && !p_ptr->max_exp) {
+		    && !p_ptr->max_exp && !in_irondeepdive(&p_ptr->wpos)) {
 			msg_print(Ind, "You gain a tiny bit of experience from collecting cash.");
 			gain_exp(Ind, 1);
 		}
@@ -8166,6 +8415,12 @@ void grid_affects_player(int Ind, int ox, int oy) {
 
 	if (!(zcave = getcave(&p_ptr->wpos))) return;
 	c_ptr = &zcave[p_ptr->py][p_ptr->px];
+
+	if (c_ptr->feat == FEAT_FAKE_WALL) {
+		p_ptr->auto_transport = AT_PARTY;
+		return;
+	}
+
 	inn = inside_inn(p_ptr, c_ptr);
 
 	if (!p_ptr->wpos.wz && !night_surface && !(c_ptr->info & CAVE_PROT) &&
@@ -8391,6 +8646,9 @@ static int magic_device_base_chance(int Ind, object_type *o_ptr) {
 		chance = chance - lev;
 	}
 
+	/* Fix underflow 1/2 */
+	if (chance < 0) chance = 0;
+
 	/* Hacks: Certain items are easier/harder to use in general: */
 
 	/* Runes */
@@ -8561,8 +8819,14 @@ static int magic_device_base_chance(int Ind, object_type *o_ptr) {
 	}
 #endif
 
+	/* Fix underflow 2/2 */
+	if (chance < 0) chance = 0;
+
 	/* Confusion makes it much harder (maybe TODO: blind/stun?) */
 	if (p_ptr->confused) chance = chance / 2;
+
+	/* prevent div0 (0) and overflow (1) */
+	if (chance < 2) chance = 2;
 
 	return chance;
 }
@@ -8571,23 +8835,32 @@ static int magic_device_base_chance(int Ind, object_type *o_ptr) {
 int activate_magic_device_chance(int Ind, object_type *o_ptr, byte *permille) {
 	int chance = magic_device_base_chance(Ind, o_ptr);
 
-	/* Give everyone a (slight) chance */
-	if (chance < USE_DEVICE)
-		return ((100 / (USE_DEVICE - chance + 1)) * ((100 * (USE_DEVICE - 1)) / USE_DEVICE)) / 100;
-
-	/* Normal chance */
-	/* Hack:
+	/* 100% not possible to reach:
 	   For chance >= 201 this produces a rounding error that would result in displayed 100%,
 	   when in reality activate_magic_device() can never reach 100% (even though it can go over 99%!).
 	   So we should not return 100 here, really, as it gives a false sense of perfect security. */
-	*permille = (1000 - ((USE_DEVICE - 1) * 1000) / chance) % 10; /* <- for calling function, to disregard '100%' fake result and display permille instead */
-	return 100 - ((USE_DEVICE - 1) * 100) / chance; /* <- rounding error causes '100%' for chance >= 201 */
+	//*permille = (1000 - ((USE_DEVICE - 1) * 100) / chance) % 10; /* <- for calling function, to disregard '100%' fake result and display permille instead */
+	//chance = 100 - ((USE_DEVICE - 1) * 100) / chance;
+
+	/* 100% possible to reach: */
+	*permille = (1000 - ((USE_DEVICE - 1) * 1000) / chance + (chance * 10) / 11) % 10;
+	chance = 100 - ((USE_DEVICE - 1) * 100) / chance + chance / 11;
+	if (chance >= 100) {
+		chance = 100;
+		*permille = 0;
+	}
+
+	/* Give everyone a (slight) chance */
+	if (!chance) return 1;
+
+	return chance;
 }
 
 bool activate_magic_device(int Ind, object_type *o_ptr) {
 	player_type *p_ptr = Players[Ind];
+	byte permille;
 
-	int chance = magic_device_base_chance(Ind, o_ptr);
+	int chance = activate_magic_device_chance(Ind, o_ptr, &permille);
 
 	/* Certain items are heavily restricted (todo: use WINNERS_ONLY flag instead for cleanliness) */
 	if (o_ptr->name1 == ART_PHASING && !p_ptr->total_winner) {
@@ -8595,13 +8868,9 @@ bool activate_magic_device(int Ind, object_type *o_ptr) {
 		if (!is_admin(p_ptr)) return FALSE;
 	}
 
-	/* Give everyone a (slight) chance */
-	if ((chance < USE_DEVICE) && (rand_int(USE_DEVICE - chance + 1) == 0))
-		chance = USE_DEVICE;
-
 	/* Roll for usage */
-	if ((chance < USE_DEVICE) || (randint(chance) < USE_DEVICE)) return FALSE;
-	return TRUE;
+	if (rand_int(1000) < chance * 10 + permille) return TRUE;
+	return FALSE;
 }
 
 /* Condense an (account) name into a 'normalised' version, used to prevent

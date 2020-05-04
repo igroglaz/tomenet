@@ -418,7 +418,9 @@ void delete_monster_idx(int i, bool unfound_arts) {
 
 	/* terminate mindcrafter charm effect */
 	if (m_ptr->charmedignore) {
-		Players[m_ptr->charmedignore]->mcharming--;
+		int Ind = find_player(m_ptr->charmedignore);
+
+		if (Ind) Players[Ind]->mcharming--;
 		m_ptr->charmedignore = 0;
 	}
 
@@ -2735,7 +2737,7 @@ void update_player(int Ind) {
 			    ((q_ptr->inventory[INVEN_OUTER].k_idx) &&
 			    (q_ptr->inventory[INVEN_OUTER].tval == TV_CLOAK) &&
 			    (q_ptr->inventory[INVEN_OUTER].sval == SV_SHADOW_CLOAK)))
-			    && !(q_ptr->temp_misc_2 & 0x01)) { //snowed by a snowball? =p
+			    && !(q_ptr->temp_misc_1 & 0x08)) { //snowed by a snowball? =p
 				/* in PvP, invis shouldn't help too greatly probably */
 				if ((q_ptr->lev > p_ptr->lev && !hostile) ||
 				    q_ptr->invis_phase >= (hostile ? 85 : 20))
@@ -2746,7 +2748,7 @@ void update_player(int Ind) {
 			if (q_ptr->cloaked == 1 && !q_ptr->cloak_neutralized &&
 			    !player_in_party(p_ptr->party, Ind)
 			    && !(q_ptr->mode & MODE_PVP)
-			    && !(q_ptr->temp_misc_2 & 0x01)) //snowed by a snowball? =p
+			    && !(q_ptr->temp_misc_1 & 0x08)) //snowed by a snowball? =p
 				flag = FALSE;
 
 			/* Dungeon masters can see invisible players */
@@ -3122,6 +3124,11 @@ if (PMO_DEBUG == r_idx) s_printf("PMO_DEBUG 6\n");
 		if (in_valinor(wpos) &&
 		    (r_idx != RI_BRIGHTLANCE ) && (r_idx != RI_OROME)) /* Brightlance, Orome */
 			return 23;
+
+		if (l_ptr) {
+			if ((l_ptr->flags2 & LF2_NO_LIVE_SPAWN) && !level_generation_time) return 54;
+			if (l_ptr->flags2 & LF2_NO_SPAWN) return 55;
+		}
 	}
 #ifdef PMO_DEBUG
 if (PMO_DEBUG == r_idx) s_printf("PMO_DEBUG 6a\n");
@@ -4968,7 +4975,12 @@ void message_pain(int Ind, int m_idx, int dam) {
 
 	/* DEG Modified to give damage information */
 	/* Jelly's, Mold's, Vortex's, Quthl's */
-	if (strchr("jmvQE", r_ptr->d_char)) {
+	if (r_ptr->flags3 & RF3_NONLIVING) { /* Constructs: No message. Note that this means vortices too (handled below otherwise). */
+		if (r_ptr->flags1 & RF1_UNIQUE)
+			msg_format(Ind, "\377%c%^s takes \377e%d \377%cdamage.", uniq, m_name, dam, uniq);
+		else
+			msg_format(Ind, "%^s takes \377g%d \377wdamage.", m_name, dam);
+	} else if (strchr("jmvQE", r_ptr->d_char)) {
 		if (r_ptr->flags1 & RF1_UNIQUE) {
 			if (percentage > 95)
 				msg_format(Ind, "\377%c%^s barely notices the \377e%d \377%cdamage.", uniq, m_name, dam, uniq);

@@ -117,6 +117,7 @@ int color_char_to_attr(char c) {
 		case '1': return TERM_HAVOC;
 		case '2': return TERM_LAMP;
 		case '3': return TERM_LAMP_DARK;
+		case '4': return TERM_SELECTOR;
 	}
 
 	return (-1);
@@ -191,6 +192,7 @@ char color_attr_to_char(int a) {
 		case TERM_HAVOC: return '1';
 		case TERM_LAMP: return '2';
 		case TERM_LAMP_DARK: return '3';
+		case TERM_SELECTOR: return '4';
 	}
 
 	return 'w';
@@ -362,7 +364,7 @@ const char *my_strcasestr_skipcol(const char *big, const char *little, byte stri
 	if (*big == 0) return NULL; //at least this one is required, was glitching in-game guide search! oops..
 
 	if (strict) { /* switch to strict mode */
-		bool just_spaces = strict == 4 ? FALSE : TRUE;
+		bool just_spaces = (strict == 4 ? FALSE : TRUE);
 		do {
 			/* Skip colour codes */
 			while (big[cnt] == '\377') {
@@ -373,7 +375,7 @@ const char *my_strcasestr_skipcol(const char *big, const char *little, byte stri
 			if (big[cnt] != ' ') just_spaces = FALSE;
 
 			/* Should not start on a lower-case letter, so we know we're not just in the middle of some random text.. */
-			if (strict > 1 && isalpha(big[cnt]) && big[cnt] == tolower(big[cnt])) return NULL;
+			if (strict >= 2 && isalpha(big[cnt]) && big[cnt] == tolower(big[cnt])) return NULL;
 
 			cnt2 = cnt_offset = 0;
 			l = 0;
@@ -385,7 +387,7 @@ const char *my_strcasestr_skipcol(const char *big, const char *little, byte stri
 				}
 				if (!big[cnt + cnt2 + cnt_offset]) return NULL;
 
-				if (strict == 2) { /* Case-sensitive: Caps only (the needle is actually all-caps) */
+				if (strict >= 3) { /* Case-sensitive: Caps only (the needle is actually all-caps) */
 					if (big[cnt + cnt2 + cnt_offset] == little[cnt2]) l++;
 					else break;
 				} else {
@@ -561,9 +563,93 @@ char *roman_suffix(char* cname) {
 			maybe_prefix = FALSE; //irregular ;) simply as it's the highest roman number..
 			rome_prev = 1000;
 			break;
+		default:
+			/* Other letters do not belong into roman numbers */
+			return NULL;
 		}
 	}
 
 	/* Success, return starting position of the roman number */
 	return p0;
+}
+
+/*
+ * Check if the server/client version fills the requirements.
+ *
+ * Branch has to be an exact match.
+ */
+bool is_older_than(version_type *version, int major, int minor, int patch, int extra, int branch, int build) {
+	if (version->major > major)
+		return FALSE; /* very new */
+	else if (version->major < major)
+		return TRUE; /* very old */
+	else if (version->minor > minor)
+		return FALSE; /* pretty new */
+	else if (version->minor < minor)
+		return TRUE; /* pretty old */
+	else if (version->patch > patch)
+		return FALSE; /* somewhat new */
+	else if (version->patch < patch)
+		return TRUE; /* somewhat old */
+	else if (version->extra > extra)
+		return FALSE; /* a little newer */
+	else if (version->extra < extra)
+		return TRUE; /* a little older */
+	/* Check that the branch is an exact match */
+	else if (version->branch == branch) {
+		/* Now check the build */
+		if (version->build > build)
+			return FALSE;
+		else if (version->build < build)
+			return TRUE;
+	}
+
+	/* Default */
+	return FALSE;
+}
+bool is_newer_than(version_type *version, int major, int minor, int patch, int extra, int branch, int build) {
+//#ifdef ATMOSPHERIC_INTRO /* only defined client-side, so commented out is simpler for now */
+	/* hack for animating colours before we even have network contact to server */
+	if (!version->major) return TRUE;
+//#endif
+
+	if (version->major < major)
+		return FALSE; /* very old */
+	else if (version->major > major)
+		return TRUE; /* very new */
+	else if (version->minor < minor)
+		return FALSE; /* pretty old */
+	else if (version->minor > minor)
+		return TRUE; /* pretty new */
+	else if (version->patch < patch)
+		return FALSE; /* somewhat old */
+	else if (version->patch > patch)
+		return TRUE; /* somewhat new */
+	else if (version->extra < extra)
+		return FALSE; /* a little older */
+	else if (version->extra > extra)
+		return TRUE; /* a little newer */
+	/* Check that the branch is an exact match */
+	else if (version->branch == branch)
+	{
+		/* Now check the build */
+		if (version->build < build)
+			return FALSE;
+		else if (version->build > build)
+			return TRUE;
+	}
+
+	/* Default */
+	return FALSE;
+}
+bool is_same_as(version_type *version, int major, int minor, int patch, int extra, int branch, int build) {
+	if (version->major == major
+	    && version->minor == minor
+	    && version->patch == patch
+	    && version->extra == extra
+	    && version->branch == branch
+	    && version->build == build)
+		return TRUE;
+
+	return FALSE;
 }

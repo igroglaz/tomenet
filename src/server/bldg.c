@@ -716,7 +716,7 @@ static bool inn_comm(int Ind, int cmd) {
 	/* Extract race info */
 	vampire = ((PRACE_FLAG(PR1_VAMPIRE)) || (p_ptr->mimic_form == MIMIC_VAMPIRE));
 #endif	// 0
-	vampire = p_ptr->suscep_life;
+	vampire = p_ptr->prace == RACE_VAMPIRE;
 
 	switch(cmd) {
 		case BACT_FOOD: /* Buy food & drink */
@@ -1990,7 +1990,7 @@ bool bldg_process_command(int Ind, store_type *st_ptr, int action, int item, int
 				x++;
 			}
 
-			if (ok) recreate = castle_quest(y - 1, x - 1);;
+			if (ok) recreate = castle_quest(y - 1, x - 1);
 			else msg_format(Ind, "ERROR: no quest info feature found: %d", bact - BACT_QUEST1 + FEAT_QUEST1);
 #else
 			/* get an extermination order */
@@ -2118,6 +2118,7 @@ bool bldg_process_command(int Ind, store_type *st_ptr, int action, int item, int
 			if (do_res_stat(Ind, A_DEX)) paid = TRUE;
 			if (do_res_stat(Ind, A_CON)) paid = TRUE;
 			if (do_res_stat(Ind, A_CHR)) paid = TRUE;
+			if (restore_level(Ind)) paid = TRUE;
 			break;
 		/* set timed reward flag */
 		case BACT_GOLD:
@@ -2273,9 +2274,9 @@ bool bldg_process_command(int Ind, store_type *st_ptr, int action, int item, int
 				break;
 			}
 
-			if(!something) msg_print(Ind, "Well, you have no fate, anyway I'll keep your money!");
+			if (!something) msg_print(Ind, "Well, you have no fate, anyway I'll keep your money!");
 #else /* fortune cookies for now, lol */
-			fortune(Ind, FALSE);
+			fortune(Ind, 1);
 #endif
 			paid = TRUE;
 			break;
@@ -2600,7 +2601,7 @@ if (is_admin(p_ptr))
 				msg_print(Ind, "You need an up-to-date client to order an item.");
 				break;
 			}
-			Send_request_str(Ind, RID_ITEM_ORDER, "Which item would you like to order? ", "");
+			Send_request_str(Ind, RID_ITEM_ORDER, "Which item would you like to order? (Or \"cancel\") ", "");
 			break;
 #endif
 #ifdef ENABLE_MERCHANT_MAIL

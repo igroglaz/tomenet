@@ -14,11 +14,11 @@
 #include "angband.h"
 #include "externs.h"
 
-/* chance of townie respawning like other monsters, randint(chance)==0 means respawn */
+/* chance of townie respawning like other monsters, rand_int(chance)==0 means respawn */
  /* Default */
-#define TOWNIE_RESPAWN_CHANCE	250
+#define TOWNIE_RESPAWN_CHANCE	350
 /* better for Halloween event */
-#define HALLOWEEN_TOWNIE_RESPAWN_CHANCE	125
+#define HALLOWEEN_TOWNIE_RESPAWN_CHANCE	175
 
 /* if defined, player ghost loses exp slowly. [10000]
  * see GHOST_XP_CASHBACK in xtra2.c also.
@@ -279,9 +279,13 @@ cptr value_check_aux2(object_type *o_ptr) {
 	case TV_BOW:
 	case TV_BOOMERANG:
 		/* Good "armor" bonus */
-		if (o_ptr->to_a > k_ptr->to_a) return "good";
+		if (o_ptr->to_a > k_ptr->to_a
+		    && o_ptr->to_a > 0 /* for rusty armour....*/
+		    ) return "good";
 		/* Good "weapon" bonus */
-		if (o_ptr->to_h - k_ptr->to_h + o_ptr->to_d - k_ptr->to_d > 0) return "good";
+		if (o_ptr->to_h - k_ptr->to_h + o_ptr->to_d - k_ptr->to_d > 0
+		    && (o_ptr->to_h > 0 || o_ptr->to_d > 0) /* for broken daggers....*/
+		    ) return "good";
 		break;
 	default:
 		/* Good "armor" bonus */
@@ -459,6 +463,7 @@ static void sense_inventory(int Ind) {
 		case TV_BLUNT:
 		case TV_POLEARM:
 		case TV_SWORD:
+		case TV_AXE:
 		case TV_BOOTS:
 		case TV_GLOVES:
 		case TV_HELM:
@@ -468,7 +473,7 @@ static void sense_inventory(int Ind) {
 		case TV_SOFT_ARMOR:
 		case TV_HARD_ARMOR:
 		case TV_DRAG_ARMOR:
-		case TV_AXE:
+		case TV_BOOMERANG:
 			if (fail && !heavy) continue; //finally fail
 			if (ok_combat) {
 				feel = (heavy ? value_check_aux1(o_ptr) :
@@ -492,7 +497,6 @@ static void sense_inventory(int Ind) {
 		case TV_WAND:
 		case TV_STAFF:
 		case TV_ROD:
-		case TV_FOOD:
 			if (fail && !heavy_magic) continue; //finally fail
 			if (ok_magic && !object_aware_p(Ind, o_ptr)) {
 				feel = (heavy_magic ? value_check_aux1_magic(o_ptr) :
@@ -504,7 +508,6 @@ static void sense_inventory(int Ind) {
 		case TV_ARROW:
 		case TV_BOLT:
 		case TV_BOW:
-		case TV_BOOMERANG:
 			if (fail && !heavy_archery) continue; //finally fail
 			if (ok_archery || (ok_combat && magik(25))) {
 				feel = (heavy_archery ? value_check_aux1(o_ptr) :
@@ -518,6 +521,14 @@ static void sense_inventory(int Ind) {
 				feel = (heavy_traps ? value_check_aux1(o_ptr) :
 						value_check_aux2(o_ptr));
 				if (heavy_traps) felt_heavy = TRUE;
+			}
+			break;
+		case TV_FOOD: /* dual! Uses auxX_magic, which contains the food-specific values */
+			if (fail && !heavy_magic && !heavy) continue; //finally fail
+			if ((ok_combat || ok_magic) && !object_aware_p(Ind, o_ptr)) {
+				feel = ((heavy || heavy_magic) ? value_check_aux1_magic(o_ptr) :
+						value_check_aux2_magic(o_ptr));
+				if (heavy || heavy_magic) felt_heavy = TRUE;
 			}
 			break;
 		}
@@ -606,14 +617,15 @@ static void sense_inventory(int Ind) {
 
 		/* Combine / Reorder the pack (later) */
 		p_ptr->notice |= (PN_COMBINE | PN_REORDER);
-
 		/* Window stuff */
 		p_ptr->window |= (PW_INVEN | PW_EQUIP);
 
+
 		/* in case the pseudo-id inscription triggers a forced auto-inscription! :)
 		   Added to allow inscribing 'good' ammo !k or so (ethereal ammo) */
+		o_ptr->auto_insc = TRUE;
 		handle_stuff(Ind);
-		Send_apply_auto_insc(Ind, i);
+		//Send_apply_auto_insc(Ind, i);
 	}
 }
 
@@ -865,20 +877,58 @@ static void erase_effects(int effect) {
 	if (!(zcave = getcave(wpos))) return;
 
 	/* XXX +1 is needed.. */
-	for (l = 0; l < tdi[rad + 0]; l++)
-	{
+	for (l = 0; l < tdi[rad + 0]; l++) {
 		j = cy + tdy[l];
 		i = cx + tdx[l];
 		if (!in_bounds2(wpos, j, i)) continue;
 
 		c_ptr = &zcave[j][i];
 
-		if (c_ptr->effect == effect)
-		{
+		if (c_ptr->effect == effect) {
 			c_ptr->effect = 0;
 			everyone_lite_spot(wpos, j, i);
 		}
+		if (c_ptr->effect_past == effect) c_ptr->effect_past = 0;
 	}
+}
+
+/* Helper function for usage of EFF_DAMAGE_AFTER_SETTING:
+   Imprint effect on a grid, redraw it for everybody, apply damage projection. */
+/* Apply project() damage at the end of processing an effect, right after setting all new c_ptr->effect, instead of in
+   the beginning before generating the new effect-step. This helps that monsters don't 'jump' an effect by lucky timing. */
+#define EFF_DAMAGE_AFTER_SETTING
+static void apply_effect(int k, int *who, struct worldpos *wpos, int x, int y, cave_type *c_ptr) {
+#if 0 //#ifdef EFF_DAMAGE_AFTER_SETTING
+	effect_type *e_ptr = &effects[k];
+	//not sure whether the mod_ball_spell_flags() should be used actually:
+	int flg = mod_ball_spell_flags(e_ptr->type, PROJECT_NORF | PROJECT_GRID | PROJECT_KILL | PROJECT_ITEM | PROJECT_HIDE | PROJECT_JUMP | PROJECT_NODO | PROJECT_NODF);
+
+	/* Imprint on grid */
+	c_ptr->effect = k;
+
+	/* Redraw for everyone */
+	everyone_lite_spot(wpos, y, x);
+
+	/* Apply damage -- maybe efficient to add a skip here for non-damaging visual-only effects? */
+	project(*who, 0, wpos, y, x, e_ptr->dam, e_ptr->type, flg, "");
+
+	/* The caster got ghost-killed by the projection (or just disconnected)? If it was a real player, handle it: */
+	if (*who < 0 && *who != PROJECTOR_EFFECT && *who != PROJECTOR_PLAYER &&
+	    Players[0 - *who]->conn == NOT_CONNECTED) {
+		/* Make the effect friendly after death - mikaelh */
+		*who = PROJECTOR_PLAYER;
+	}
+	/* Storms end instanly though if the caster is gone or just died. (PROJECTOR_PLAYER falls through from above check.) */
+	if (e_ptr->flags & EFF_STORM &&
+	    (*who == PROJECTOR_PLAYER || Players[0 - *who]->death)) {
+		erase_effects(k);
+		*who = 0;
+	}
+#else
+	/* Old way - just imprint and redraw */
+	c_ptr->effect = k;
+	everyone_lite_spot(wpos, y, x);
+#endif
 }
 
 /*
@@ -910,27 +960,30 @@ static void process_effects(void) {
 	cave_type *c_ptr;
 	int who = PROJECTOR_EFFECT;
 	player_type *p_ptr;
-
-	/* Every 10 game turns */
-	//if (turn % 10) return;
-
-	/* Not in the small-scale wilderness map */
-	//if (p_ptr->wild_mode) return;
-
+	effect_type *e_ptr;
+	int flg;
+	bool skip;
 
 	for (k = 0; k < MAX_EFFECTS; k++) {
-		// int e = cave[j][i].effect;
-		effect_type *e_ptr = &effects[k];
-
+		e_ptr = &effects[k];
 		/* Skip empty slots */
 		if (e_ptr->time == 0) continue;
 
 		wpos = &e_ptr->wpos;
 		if (!(zcave = getcave(wpos))) {
 			e_ptr->time = 0;
-			/* TODO - excise it */
+			/* TODO - excise it - see right below! */
 			continue;
 		}
+		/* See above - It ends and for some reason getcave() was fine again? Excise it.
+		   This is kinda paranoia probably? */
+		if (e_ptr->time <= 0) {
+			erase_effects(k);
+			continue;
+		}
+
+		//not sure whether the mod_ball_spell_flags() should be used actually:
+		flg = mod_ball_spell_flags(e_ptr->type, PROJECT_NORF | PROJECT_GRID | PROJECT_KILL | PROJECT_ITEM | PROJECT_HIDE | PROJECT_JUMP | PROJECT_NODO | PROJECT_NODF);
 
 #ifdef ARCADE_SERVER
  #if 0
@@ -986,12 +1039,6 @@ static void process_effects(void) {
 		/* Reduce duration */
 		e_ptr->time--;
 
-		/* It ends? */
-		if (e_ptr->time <= 0) {
-			erase_effects(k);
-			continue;
-		}
-
 		/* effect belongs to a non-player? */
 		if (e_ptr->who > 0) who = e_ptr->who;
 		else { /* or to a player? */
@@ -1041,63 +1088,48 @@ static void process_effects(void) {
 
 			c_ptr = &zcave[j][i];
 
-			//if (c_ptr->effect != k) continue;
-			if (c_ptr->effect != k) /* Nothing */;
-			else {
-				if (e_ptr->time) {
-					int flg = PROJECT_NORF | PROJECT_GRID | PROJECT_KILL | PROJECT_ITEM | PROJECT_HIDE | PROJECT_JUMP | PROJECT_NODO | PROJECT_NODF;
+			/* Don't allow multiple effects to hit the same grid */
+			if (c_ptr->effect && c_ptr->effect != k) skip = TRUE;
+			else skip = FALSE;
 
-					flg = mod_ball_spell_flags(e_ptr->type, flg);
+			/* Remove memories of where the effect boundary was previously */
+			if (c_ptr->effect_past == k) c_ptr->effect_past = 0;
 
-					/* Apply damage */
-					project(who, 0, wpos, j, i, e_ptr->dam, e_ptr->type, flg, "");
+#ifndef EFF_DAMAGE_AFTER_SETTING
+			/* For all currently affected grids:
+			   Apply colour animation and damage projection, erase effect if timeout results from projection somehow */
+			if (c_ptr->effect == k) {
+				/* Apply damage */
+				project(who, 0, wpos, j, i, e_ptr->dam, e_ptr->type, flg, "");
 
-					/* Oh, destroyed? RIP */
-					if (who < 0 && who != PROJECTOR_EFFECT && who != PROJECTOR_PLAYER &&
-					    Players[0 - who]->conn == NOT_CONNECTED) {
-						/* Make the effect friendly after death - mikaelh */
-						who = PROJECTOR_PLAYER;
-					}
-
-#ifndef EXTENDED_TERM_COLOURS
- #ifdef ANIMATE_EFFECTS
-  #ifndef FREQUENT_EFFECT_ANIMATION
-					/* C. Blue - hack: animate effects inbetween
-					   ie allow random changes in spell_color().
-					   Note: animation speed depends on effect interval. */
-					if (spell_color_animation(e_ptr->type))
-					    everyone_lite_spot(wpos, j, i);
-  #endif
- #endif
-#endif
-				} else {
-					c_ptr->effect = 0;
-					everyone_lite_spot(wpos, j, i);
+				/* The caster got ghost-killed by the projection (or just disconnected)? If it was a real player, handle it: */
+				if (who < 0 && who != PROJECTOR_EFFECT && who != PROJECTOR_PLAYER &&
+				    Players[0 - who]->conn == NOT_CONNECTED) {
+					/* Make the effect friendly after death - mikaelh */
+					who = PROJECTOR_PLAYER;
 				}
-
-				/* Hack -- notice death */
-				//	if (!alive || death) return;
-				/* Storm ends if the cause is gone */
+				/* Storms end instanly though if the caster is gone or just died. (PROJECTOR_PLAYER falls through from above check.) */
 				if (e_ptr->flags & EFF_STORM &&
 				    (who == PROJECTOR_PLAYER || Players[0 - who]->death)) {
 					erase_effects(k);
 					break;
 				}
+ #ifndef EXTENDED_TERM_COLOURS
+  #ifdef ANIMATE_EFFECTS
+   #ifndef FREQUENT_EFFECT_ANIMATION
+				/* C. Blue - hack: animate effects inbetween ie allow random changes in spell_color().
+				   Note: animation speed depends on effect interval. */
+				if (spell_color_animation(e_ptr->type))
+				    everyone_lite_spot(wpos, j, i);
+   #endif
+  #endif
+ #endif
 			}
+#endif
 
-
-#if 0
-			if (((e_ptr->flags & EFF_WAVE) && !(e_ptr->flags & EFF_LAST)) || ((e_ptr->flags & EFF_STORM) && !(e_ptr->flags & EFF_LAST))) {
-				if (distance(e_ptr->cy, e_ptr->cx, j, i) < e_ptr->rad - 2)
-					c_ptr->effect = 0;
-			}
-			if (((e_ptr->flags & EFF_THINWAVE) && !(e_ptr->flags & EFF_LAST)) || ((e_ptr->flags & EFF_STORM) && !(e_ptr->flags & EFF_LAST))) {
-				if (distance(e_ptr->cy, e_ptr->cx, j, i) < e_ptr->rad - 2)
-					c_ptr->effect = 0;
-			}
-#else	// 0
-
-			if (!(e_ptr->flags & EFF_LAST)) {
+			/* If it's a changing effect, remove it from currently affected grid to prepare for next iteration */
+			if (!(e_ptr->flags & EFF_LAST)
+			    && c_ptr->effect == k) {
 				if ((e_ptr->flags & EFF_WAVE)) {
 					if (distance(e_ptr->cy, e_ptr->cx, j, i) < e_ptr->rad - 2) { //wave has thickness 3: each taget gets hit 3 times
 						c_ptr->effect = 0;
@@ -1105,6 +1137,7 @@ static void process_effects(void) {
 					}
 				} else if ((e_ptr->flags & EFF_THINWAVE)) {
 					if (distance(e_ptr->cy, e_ptr->cx, j, i) < e_ptr->rad) { // thin wave has thickness 1: each target gets hit 1 time
+						if (c_ptr->effect == k) c_ptr->effect_past = k; /* Don't allow a monster to 'jump' the effect */
 						c_ptr->effect = 0;
 						everyone_lite_spot(wpos, j, i);
 					}
@@ -1120,37 +1153,33 @@ static void process_effects(void) {
 				} else if (e_ptr->flags & (EFF_FIREWORKS1 | EFF_FIREWORKS2 | EFF_FIREWORKS3)) {
 					c_ptr->effect = 0;
 					everyone_lite_spot(wpos, j, i);
- #if 0 /* no need to erase inbetween, while effect is still expanding - at the same time this fixes ugly tile flickering from redrawing (lava!) */
+#if 0 /* no need to erase inbetween, while effect is still expanding - at the same time this fixes ugly tile flickering from redrawing (lava!) */
 				} else if (e_ptr->flags & (EFF_LIGHTNING1 | EFF_LIGHTNING2 | EFF_LIGHTNING3)) {
 					c_ptr->effect = 0;
 					everyone_lite_spot(wpos, j, i);
- #endif
+#endif
 				}
 			}
-#endif	// 0
+
+			/* --- Complex effects: Create next effect iteration and imprint it on grid --- */
 
 			/* Creates a "wave" effect*/
 			if (e_ptr->flags & (EFF_WAVE | EFF_THINWAVE)) {
 				if (los(wpos, e_ptr->cy, e_ptr->cx, j, i) &&
-				    (distance(e_ptr->cy, e_ptr->cx, j, i) == e_ptr->rad)) {
-					c_ptr->effect = k;
-					everyone_lite_spot(wpos, j, i);
-				}
+				    (distance(e_ptr->cy, e_ptr->cx, j, i) == e_ptr->rad))
+					apply_effect(k, &who, wpos, i, j, c_ptr);
 			}
 
 			/* Generate fireworks effects */
-			if (e_ptr->flags & (EFF_FIREWORKS1 | EFF_FIREWORKS2 | EFF_FIREWORKS3)) {
+			else if (e_ptr->flags & (EFF_FIREWORKS1 | EFF_FIREWORKS2 | EFF_FIREWORKS3)) {
 				int semi = (e_ptr->time + e_ptr->rad) / 2;
 				/* until half-time (or half-radius) the fireworks rise into the air */
 				if (e_ptr->rad < e_ptr->time) {
-					if (i == e_ptr->cx && j == e_ptr->cy - e_ptr->rad) {
-						c_ptr->effect = k;
-						everyone_lite_spot(wpos, j, i);
-					}
+					if (i == e_ptr->cx && j == e_ptr->cy - e_ptr->rad)
+						apply_effect(k, &who, wpos, i, j, c_ptr);
 				} else { /* after that, they explode (w00t) */
 					/* explosion is faster than flying upwards */
-//doesn't work					e_ptr->interval = 2;
-
+					//doesn't work-   e_ptr->interval = 2;
 #ifdef USE_SOUND_2010
 					if (e_ptr->rad == e_ptr->time) {
 						if ((e_ptr->flags & EFF_FIREWORKS3))
@@ -1165,12 +1194,11 @@ static void process_effects(void) {
 					}
 #endif
 
-#if 0
+#if 0 /* just for testing */
 					if (e_ptr->flags & EFF_FIREWORKS1) { /* simple rocket (line) */
-						if (i == e_ptr->cx && j == e_ptr->cy - e_ptr->rad) {
-							c_ptr->effect = k;
-							everyone_lite_spot(wpos, j, i);
-						}
+						if (i == e_ptr->cx && j == e_ptr->cy - e_ptr->rad)
+							apply_effect(k, &who, wpos, i, j, c_ptr);
+					}
 #endif
 					if (e_ptr->flags & EFF_FIREWORKS1) { /* 3-star */
 						if (((i == e_ptr->cx && j >= e_ptr->cy - e_ptr->rad) && /* up */
@@ -1178,10 +1206,8 @@ static void process_effects(void) {
 						    ((i >= e_ptr->cx + semi - e_ptr->rad && j == e_ptr->cy - semi) && /* left */
 						    (i <= e_ptr->cx + semi + 1 - e_ptr->rad && j == e_ptr->cy - semi)) ||
 						    ((i <= e_ptr->cx - semi + e_ptr->rad && j == e_ptr->cy - semi) && /* right */
-						    (i >= e_ptr->cx - semi - 1 + e_ptr->rad && j == e_ptr->cy - semi))) {
-							c_ptr->effect = k;
-							everyone_lite_spot(wpos, j, i);
-						}
+						    (i >= e_ptr->cx - semi - 1 + e_ptr->rad && j == e_ptr->cy - semi)))
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 					} else if (e_ptr->flags & EFF_FIREWORKS2) { /* 5-star */
 						if (((i == e_ptr->cx && j >= e_ptr->cy - e_ptr->rad) && /* up */
 						    (i == e_ptr->cx && j <= e_ptr->cy + 1 - e_ptr->rad)) ||
@@ -1192,10 +1218,8 @@ static void process_effects(void) {
 						    ((i >= e_ptr->cx + semi - e_ptr->rad && j <= e_ptr->cy - 2 * semi + e_ptr->rad) && /* down-left */
 						    (i <= e_ptr->cx + semi + 1 - e_ptr->rad && j >= e_ptr->cy - 0 - 2 * semi + e_ptr->rad)) ||
 						    ((i <= e_ptr->cx - semi + e_ptr->rad && j <= e_ptr->cy - 2 * semi + e_ptr->rad) && /* down-right */
-						    (i >= e_ptr->cx - semi - 1 + e_ptr->rad && j >= e_ptr->cy - 0 - 2 * semi + e_ptr->rad))) {
-							c_ptr->effect = k;
-							everyone_lite_spot(wpos, j, i);
-						}
+						    (i >= e_ptr->cx - semi - 1 + e_ptr->rad && j >= e_ptr->cy - 0 - 2 * semi + e_ptr->rad)))
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 					} else { /* EFF_FIREWORKS3 */ /* 7-star whoa */
 						if (((i == e_ptr->cx && j >= e_ptr->cy - e_ptr->rad) && /* up */
 						    (i == e_ptr->cx && j <= e_ptr->cy + 1 - e_ptr->rad)) ||
@@ -1210,16 +1234,14 @@ static void process_effects(void) {
 						    ((i >= e_ptr->cx + semi - e_ptr->rad && j <= e_ptr->cy - 2 * semi + e_ptr->rad) && /* down-left */
 						    (i <= e_ptr->cx + semi + 1 - e_ptr->rad && j >= e_ptr->cy - 0 - 2 * semi + e_ptr->rad)) ||
 						    ((i <= e_ptr->cx - semi + e_ptr->rad && j <= e_ptr->cy - 2 * semi + e_ptr->rad) && /* down-right */
-						    (i >= e_ptr->cx - semi - 1 + e_ptr->rad && j >= e_ptr->cy - 0 - 2 * semi + e_ptr->rad))) {
-							c_ptr->effect = k;
-							everyone_lite_spot(wpos, j, i);
-						}
+						    (i >= e_ptr->cx - semi - 1 + e_ptr->rad && j >= e_ptr->cy - 0 - 2 * semi + e_ptr->rad)))
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 					}
 				}
 			}
 
 			/* Generate lightning effects -- effect_xtra: -1\ 0| 1/ 2_ */
-			if (e_ptr->flags & (EFF_LIGHTNING1 | EFF_LIGHTNING2 | EFF_LIGHTNING3)) {
+			else if (e_ptr->flags & (EFF_LIGHTNING1 | EFF_LIGHTNING2 | EFF_LIGHTNING3)) {
 				int mirrored = (e_ptr->dam == 0) ? -1 : 1;
 
 				if ((e_ptr->flags & EFF_LIGHTNING1)) {
@@ -1230,128 +1252,106 @@ static void process_effects(void) {
 					switch (stage) {
 					case 15:
 						if (i == e_ptr->cx + mirrored * 14 && j == e_ptr->cy + 4) {///
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = -mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 14:
 						if (i == e_ptr->cx + mirrored * 13 && j == e_ptr->cy + 3) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 13:
 						if (i == e_ptr->cx + mirrored * 12 && j == e_ptr->cy + 3) {///
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = -mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx + mirrored * 6 && j == e_ptr->cy + 5) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 12:
 						if (i == e_ptr->cx + mirrored * 11 && j == e_ptr->cy + 2) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx + mirrored * 5 && j == e_ptr->cy + 5) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 11:
 						if (i == e_ptr->cx + mirrored * 10 && j == e_ptr->cy + 2) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx + mirrored * 4 && j == e_ptr->cy + 5) {///
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = -mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 10:
 						if (i == e_ptr->cx + mirrored * 9 && j == e_ptr->cy + 2) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx + mirrored * 3 && j == e_ptr->cy + 4) {///
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = -mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 9:
 						if (i == e_ptr->cx + mirrored * 8 && j == e_ptr->cy + 2) {///
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = -mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx + mirrored * 3 && j == e_ptr->cy + 3) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 8:
 						if (i == e_ptr->cx + mirrored * 7 && j == e_ptr->cy + 1) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx + mirrored * 4 && j == e_ptr->cy + 3) {//`
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 7:
 						if (i == e_ptr->cx + mirrored * 6 && j == e_ptr->cy + 1) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx + mirrored * 5 && j == e_ptr->cy + 2) {//`
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 6:
 						if (i == e_ptr->cx + mirrored * 5 && j == e_ptr->cy + 1) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 5:
 						if (i == e_ptr->cx + mirrored * 4 && j == e_ptr->cy + 1) {///
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = -mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 4:
 						if (i == e_ptr->cx + mirrored * 3 && j == e_ptr->cy) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 3:
 						if (i == e_ptr->cx + mirrored * 2 && j == e_ptr->cy) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 2:
 						if (i == e_ptr->cx + mirrored * 1 && j == e_ptr->cy) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 1:
 						if (i == e_ptr->cx && j == e_ptr->cy) {//_
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					}
 				} else if ((e_ptr->flags & EFF_LIGHTNING2)) {
@@ -1362,76 +1362,63 @@ static void process_effects(void) {
 					switch (stage) {
 					case 8:
 						if (i == e_ptr->cx + mirrored * 6 && j == e_ptr->cy + 5) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 7:
 						if (i == e_ptr->cx + mirrored * 6 && j == e_ptr->cy + 4) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = -mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 6:
 						if (i == e_ptr->cx + mirrored * 5 && j == e_ptr->cy + 3) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx - mirrored * (4+1) && j == e_ptr->cy + 3) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 5:
 						if (i == e_ptr->cx + mirrored * 4 && j == e_ptr->cy + 3) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = -mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx - mirrored * (3+1) && j == e_ptr->cy + 3) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 4:
 						if (i == e_ptr->cx + mirrored * 3 && j == e_ptr->cy + 2) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx - mirrored * (2+1) && j == e_ptr->cy + 3) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 3:
 						if (i == e_ptr->cx + mirrored * 2 && j == e_ptr->cy + 2) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = -mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx - mirrored * 2 && j == e_ptr->cy + 2) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 0;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 2:
 						if (i == e_ptr->cx + mirrored * 1 && j == e_ptr->cy + 1) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = -mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx - mirrored * 1 && j == e_ptr->cy + 1) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 1:
 						if (i == e_ptr->cx && j == e_ptr->cy) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 0;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					}
 				} else if ((e_ptr->flags & EFF_LIGHTNING3)) {
@@ -1442,87 +1429,115 @@ static void process_effects(void) {
 					switch (stage) {
 					case 10:
 						if (i == e_ptr->cx - mirrored * 8 && j == e_ptr->cy + 6) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 0;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 9:
 						if (i == e_ptr->cx - mirrored * 7 && j == e_ptr->cy + 5) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 8:
 						if (i == e_ptr->cx - mirrored * 6 && j == e_ptr->cy + 4) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 7:
 						if (i == e_ptr->cx - mirrored * 5 && j == e_ptr->cy + 3) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 0;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 6:
 						if (i == e_ptr->cx - mirrored * 5 && j == e_ptr->cy + 2) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx - mirrored && j == e_ptr->cy + 4) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 0;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 5:
 						if (i == e_ptr->cx - mirrored * 4 && j == e_ptr->cy + 1) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx - mirrored * 2 && j == e_ptr->cy + 3) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = -mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 4:
 						if (i == e_ptr->cx - mirrored * 3 && j == e_ptr->cy + 1) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 						if (i == e_ptr->cx - mirrored * 3 && j == e_ptr->cy + 2) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 0;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 3:
 						if (i == e_ptr->cx - mirrored * 2 && j == e_ptr->cy + 1) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 2:
 						if (i == e_ptr->cx - mirrored * 1 && j == e_ptr->cy) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = 2;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					case 1:
 						if (i == e_ptr->cx && j == e_ptr->cy) {
-							c_ptr->effect = k;
 							c_ptr->effect_xtra = mirrored;
-							everyone_lite_spot(wpos, j, i);
+							apply_effect(k, &who, wpos, i, j, c_ptr);
 						}
 					}
 				}
 			}
+
+#ifdef EFF_DAMAGE_AFTER_SETTING
+			/* For persisting grids (newly affected grids are treated in apply_effect() calls instead) of this effect:
+			   Apply colour animation and damage projection, erase effect if timeout results from projection somehow */
+			if (c_ptr->effect == k) {
+				/* Apply damage */
+				if (!skip) project(who, 0, wpos, j, i, e_ptr->dam, e_ptr->type, flg, "");
+
+				/* The caster got ghost-killed by the projection (or just disconnected)? If it was a real player, handle it: */
+				if (who < 0 && who != PROJECTOR_EFFECT && who != PROJECTOR_PLAYER &&
+				    Players[0 - who]->conn == NOT_CONNECTED) {
+					/* Make the effect friendly after death - mikaelh */
+					who = PROJECTOR_PLAYER;
+				}
+				/* Storms end instanly though if the caster is gone or just died. (PROJECTOR_PLAYER falls through from above check.) */
+				if (e_ptr->flags & EFF_STORM &&
+				    (who == PROJECTOR_PLAYER || Players[0 - who]->death)) {
+					erase_effects(k);
+					break;
+				}
+ #ifndef EXTENDED_TERM_COLOURS
+  #ifdef ANIMATE_EFFECTS
+   #ifndef FREQUENT_EFFECT_ANIMATION
+				/* C. Blue - hack: animate effects inbetween ie allow random changes in spell_color().
+				   Note: animation speed depends on effect interval. */
+				if (spell_color_animation(e_ptr->type))
+				    everyone_lite_spot(wpos, j, i);
+   #endif
+  #endif
+ #endif
+			}
+#endif
+
+			/* We lost our caster for some reason? (Died to projection) */
+			if (!who) break;
 		}
 
+		/* --- Imprint simple non-damaging effects on grid (project() was already called above in the loop).
+		       Handle effects that change their origin coordinate, as these don't fit into the loop above (storms).
+		       Also process modification of all changeable effects (radius/movement). --- */
+
+		/* Expand waves */
 		if (e_ptr->flags & (EFF_WAVE | EFF_THINWAVE)) e_ptr->rad++;
+
 		/* Creates a "storm" effect*/
-		else if (e_ptr->flags & EFF_STORM && who > PROJECTOR_EFFECT) {
+		else if (e_ptr->flags & EFF_STORM && who > PROJECTOR_EFFECT) { //todo: the player-checks are paranoia? We already checked this far above
 			p_ptr = Players[0 - who];
 
 			e_ptr->cy = p_ptr->py;
@@ -1534,16 +1549,22 @@ static void process_effects(void) {
 				if (!in_bounds2(wpos, j, i)) continue;
 
 				c_ptr = &zcave[j][i];
+				if (c_ptr->effect && c_ptr->effect != k) continue; /* 'skip' */
 
-				if (los(wpos, e_ptr->cy, e_ptr->cx, j, i) &&
-						(distance(e_ptr->cy, e_ptr->cx, j, i) <= e_ptr->rad))
-				{
-					c_ptr->effect = k;
-					everyone_lite_spot(wpos, j, i);
+				if (los(wpos, e_ptr->cy, e_ptr->cx, j, i) && (distance(e_ptr->cy, e_ptr->cx, j, i) <= e_ptr->rad)) {
+					apply_effect(k, &who, wpos, i, j, c_ptr);
+					project(who, 0, wpos, j, i, e_ptr->dam, e_ptr->type, flg, "");
+
+					/* The caster got ghost-killed by the projection (or just disconnected)? If it was a real player, handle it: */
+					if (Players[0 - who]->conn == NOT_CONNECTED || Players[0 - who]->death) {
+						erase_effects(k);
+						break;
+					}
 				}
 			}
 		}
-		/* snowflakes */
+
+		/* Drift snowflakes */
 		else if (e_ptr->flags & EFF_SNOWING) {
 			e_ptr->cy++; /* for now just fall straight downwards */
 			/* gusts of wind */
@@ -1556,10 +1577,9 @@ static void process_effects(void) {
 				if (e_ptr->cx >= MAX_WID - 1) e_ptr->cx = 1;
 			}
 			c_ptr = &zcave[e_ptr->cy][e_ptr->cx];
-			c_ptr->effect = k;
-			everyone_lite_spot(wpos, e_ptr->cy, e_ptr->cx);
+			apply_effect(k, &who, wpos, e_ptr->cx, e_ptr->cy, c_ptr);
 		}
-		/* raindrops */
+		/* Drift raindrops */
 		else if (e_ptr->flags & EFF_RAINING) {
 			e_ptr->cy++; /* for now just fall straight downwards */
 			/* gusts of wind */
@@ -1572,34 +1592,40 @@ static void process_effects(void) {
 				if (e_ptr->cx >= MAX_WID - 1) e_ptr->cx = 1;
 			}
 			c_ptr = &zcave[e_ptr->cy][e_ptr->cx];
-			c_ptr->effect = k;
-			everyone_lite_spot(wpos, e_ptr->cy, e_ptr->cx);
+			apply_effect(k, &who, wpos, e_ptr->cx, e_ptr->cy, c_ptr);
 		}
 
-		/* fireworks */
+		/* Launch/explode fireworks */
 		else if (e_ptr->flags & (EFF_FIREWORKS1 | EFF_FIREWORKS2 | EFF_FIREWORKS3)) {
 			e_ptr->rad++; /* while radius < time/2 -> "rise into the air", otherwise "explode" */
 		}
 
-		/* lightning */
+		/* Expand lightning */
 		else if ((e_ptr->flags & (EFF_LIGHTNING1 | EFF_LIGHTNING2 | EFF_LIGHTNING3))
 		    && e_ptr->rad < 15) {
 			e_ptr->rad++;
 		}
 
-		/* thunderstorm visual */
+		/* Thunderstorm visual */
 		else if (e_ptr->flags & EFF_THUNDER_VISUAL) {
 			c_ptr = &zcave[e_ptr->cy][e_ptr->cx];
-			c_ptr->effect = k;
-			everyone_lite_spot(wpos, e_ptr->cy, e_ptr->cx);
+			apply_effect(k, &who, wpos, e_ptr->cx, e_ptr->cy, c_ptr);
 		}
 
+		/* Excise effects that reached end of their lifetime, instead of relying only on the
+		   copy of this check at the beginning of process_effects(). Reason: The effect would
+		   visually linger for another project-interval then, without doing anything. So just
+		   clear it up yet, so players don't get confused. */
+		if (e_ptr->time <= 0) {
+			erase_effects(k);
+			continue;
+		}
 	}
 
-
-
+#if 0 /* Done in process_player_end_aux() */
 	/* Apply sustained effect in the player grid, if any */
-//	apply_effect(py, px);
+	apply_terrain_effect(py, px);
+#endif
 }
 
 #endif /* pelpel */
@@ -2629,8 +2655,7 @@ static void process_world_player(int Ind) {
 	if (((!istown(&p_ptr->wpos) && (rand_int(MAX_M_ALLOC_CHANCE) == 0)) ||
 	    (!season_halloween && istown(&p_ptr->wpos) && (rand_int(TOWNIE_RESPAWN_CHANCE) == 0)) ||
 	    (season_halloween && istown(&p_ptr->wpos) &&
-	    (rand_int(in_bree(&p_ptr->wpos) ?
-	    HALLOWEEN_TOWNIE_RESPAWN_CHANCE : TOWNIE_RESPAWN_CHANCE) == 0)))
+	    (rand_int(in_bree(&p_ptr->wpos) ? HALLOWEEN_TOWNIE_RESPAWN_CHANCE : TOWNIE_RESPAWN_CHANCE) == 0)))
 	    /* avoid admins spawning stuff */
 	    && !(p_ptr->admin_dm || p_ptr->admin_wiz))
 #endif
@@ -2719,7 +2744,7 @@ static int retaliate_mimic_power(int Ind, int choice) {
  */
 static bool retaliate_item(int Ind, int item, cptr inscription, bool fallback) {
 	player_type *p_ptr = Players[Ind];
-	object_type *o_ptr;;
+	object_type *o_ptr;
 	int cost, choice = 0, spell = 0;
 
 	if (item < 0) return FALSE;
@@ -2978,33 +3003,46 @@ static bool retaliate_item(int Ind, int item, cptr inscription, bool fallback) {
 }
 
 #ifdef AUTO_RET_CMD
-/* Check auto-retaliation set via slash command /autoret or /ar.
+/* Check auto-retaliation set via slash command /autoretX or /arX.
    This was added for mimics to use their powers without having to inscribe
-   a random item as a workaround. - C. Blue */
+   a random item as a workaround.
+   It returns FALSE if we want to attempt to auto-ret but can't because conditions
+   aren't met, allowing us to instead try and melee-auto-ret.
+   It returns TRUE if we want to auto-ret and also attempted it (no matter the
+   result), so we cannot additionally perform melee-auto-ret. - C. Blue
+   Also extended for runecraft, since having physical runes in the inventory
+   isn't needed to actually cast runespells. */
 static bool retaliate_cmd(int Ind, bool fallback) {
 	player_type *p_ptr = Players[Ind];
-	int ar = p_ptr->autoret;
-
-	/* Is it variant @Ot for town-only auto-retaliation? - C. Blue */
-	if (ar >= 128) {
-		if (!istownarea(&p_ptr->wpos, MAX_TOWNAREA)) return FALSE;
-		ar -= 128;
-	}
+	u16b ar = p_ptr->autoret;
 
 	/* no autoret set? */
 	if (!ar) return FALSE;
 
-	/* Hack -- use innate power via inscription on any item */
-	if (get_skill(p_ptr, SKILL_MIMIC)) {
+	/* Was a mimic power set for auto-ret? */
+	if ((ar & 0x007F) //paranoia: town-flag cannot be set on its own
+	    && p_ptr->s_info[SKILL_MIMIC].value) {
 		/* Spell to cast */
-		int choice = ar - 1;
-
-		if (choice < 4)	/* 3 polymorph powers + immunity preference */
-			return FALSE;
-
-		int power = retaliate_mimic_power(Ind, choice - 1);
+		int choice = ar - 1, power;
 		bool dir = FALSE;
-		if (innate_powers[power].smana > p_ptr->csp && fallback) return (p_ptr->fail_no_melee);
+
+		/* Is it variant @Ot for town-only auto-retaliation? */
+		if ((ar & 0x0080) && !istownarea(&p_ptr->wpos, MAX_TOWNAREA)) return FALSE;
+		ar &= ~0x0080;
+
+		/* Check for valid attempt */
+		if (choice < 4) return FALSE; /* 3 polymorph powers + immunity preference */
+		power = retaliate_mimic_power(Ind, choice - 1);
+		if (innate_powers[power].smana > p_ptr->csp && fallback) return (p_ptr->fail_no_melee); /* not enough mana to even attempt */
+		/* Accept reasonable targets:
+		 * This prevents a player from getting stuck when facing a
+		 * monster inside a wall.
+		 * NOTE: The above statement becomes obsolete nowadays if
+		 * PY_PROJ_ and similar are defined.
+		 */
+		if (!target_able(Ind, p_ptr->target_who)) return FALSE;
+
+		/* We have a valid attempt */
 		switch (power / 32) {
 		case 0: dir = monster_spells4[power].uses_dir;
 			break;
@@ -3015,18 +3053,25 @@ static bool retaliate_cmd(int Ind, bool fallback) {
 		case 3: dir = monster_spells0[power - 96].uses_dir;
 			break;
 		}
-
-		/* Accept reasonable targets:
-		 * This prevents a player from getting stuck when facing a
-		 * monster inside a wall.
-		 * NOTE: The above statement becomes obsolete nowadays if
-		 * PY_PROJ_ and similar are defined.
-		 */
-		if (!target_able(Ind, p_ptr->target_who)) return FALSE;
-
 		do_cmd_mimic(Ind, power + 3, dir ? 5 : 0);
 		return TRUE;
 	}
+	/* Was a rune set for auto-ret? */
+	else if ((ar & 0x7F00) && //paranoia: town-flag cannot be set on its own
+	    (p_ptr->s_info[SKILL_R_LITE].value || p_ptr->s_info[SKILL_R_DARK].value ||
+	    p_ptr->s_info[SKILL_R_NEXU].value || p_ptr->s_info[SKILL_R_NETH].value ||
+	    p_ptr->s_info[SKILL_R_CHAO].value || p_ptr->s_info[SKILL_R_MANA].value)) {
+		/* Is it variant @Ot for town-only auto-retaliation? */
+		if ((ar & 0x80000) && !istownarea(&p_ptr->wpos, MAX_TOWNAREA)) return FALSE;
+		ar &= ~0x8000;
+		/* Restore range to normal (1..127) for easier handling */
+		ar = ar >> 8;
+
+		/* Try to cast runespell */
+		
+		return TRUE;
+	}
+	else return FALSE;
 
 	/* If all fails, then melee */
 	return (p_ptr->fail_no_melee);
@@ -3213,6 +3258,8 @@ static bool auto_retaliate_test(int Ind) {
 
 			/* Stop annoying auto-retaliation against certain 'monsters' */
 			if (r_ptr0->flags8 & RF8_NO_AUTORET) continue;
+
+			if (m_ptr->status == M_STATUS_FRIENDLY) continue;
 
 #ifdef EXPENSIVE_NO_TARGET_TEST
 			/* Skip monsters we cannot actually target! (Sparrows) */
@@ -3711,6 +3758,31 @@ static void process_player_begin(int Ind) {
 		msg_print(Ind, "\374 ");
 		p_ptr->auto_transport = 0;
 		break;
+	case AT_PARTY:
+		p_ptr->auto_transport = 0;
+		p_ptr->recall_pos.wx = p_ptr->wpos.wx;
+		p_ptr->recall_pos.wy = p_ptr->wpos.wy;
+		d_ptr = getdungeon(&p_ptr->wpos);
+		//switch dungeon - assume that there is no other dungeon/tower on same wpos as Death Fate!
+		if (p_ptr->wpos.wz < 0) {
+			p_ptr->recall_pos.wz = 1;
+			//add the temporary 'mirror' dungeon
+			if (!(wild_info[p_ptr->wpos.wy][p_ptr->wpos.wx].flags & WILD_F_UP))
+				add_dungeon(&p_ptr->wpos, 1, 1, DF1_NO_RECALL, DF2_IRON | DF2_NO_EXIT_MASK |
+				    DF2_NO_ENTRY_MASK | DF2_RANDOM,
+				    DF3_NO_SIMPLE_STORES | DF3_NO_DUNGEON_BONUS | DF3_EXP_20, TRUE, 0, DI_DEATH_FATE, 0, 0);
+		} else {
+			p_ptr->recall_pos.wz = -1;
+			//add the temporary 'mirror' dungeon
+			if (!(wild_info[p_ptr->wpos.wy][p_ptr->wpos.wx].flags & WILD_F_DOWN))
+				add_dungeon(&p_ptr->wpos, 1, 1, DF1_NO_RECALL, DF2_IRON | DF2_NO_EXIT_MASK |
+				    DF2_NO_ENTRY_MASK | DF2_RANDOM,
+				    DF3_NO_SIMPLE_STORES | DF3_NO_DUNGEON_BONUS | DF3_EXP_20, FALSE, 0, DI_DEATH_FATE, 0, 0);
+		}
+		//get him there
+		p_ptr->new_level_method = LEVEL_RAND;
+		recall_player(Ind, "");
+		break;
 	}
 
 #if defined(TARGET_SWITCHING_COST) || defined(TARGET_SWITCHING_COST_RANGED)
@@ -3764,7 +3836,7 @@ static void process_player_begin(int Ind) {
 /*
  * Generate the feature effect
  */
-static void apply_effect(int Ind) {
+static void apply_terrain_effect(int Ind) {
 	player_type *p_ptr = Players[Ind];
 	int y = p_ptr->py, x = p_ptr->px;
 	cave_type *c_ptr;
@@ -3847,7 +3919,7 @@ void recall_player(int Ind, char *message) {
 	}
 
 #ifdef USE_SOUND_2010
-	sound(Ind, "teleport", NULL, SFX_TYPE_COMMAND, FALSE);
+	sound(Ind, "recall", "teleport", SFX_TYPE_COMMAND, FALSE);
 #endif
 
 	/* Remove the player */
@@ -3964,12 +4036,12 @@ void recall_player(int Ind, char *message) {
 			deep_dive_level[i] = -1;
 			//strcpy(deep_dive_name[i], p_ptr->name);
 #ifdef IDDC_HISCORE_SHOWS_ICON
-			sprintf(deep_dive_name[i], "%s, %s %s (\\{%c%c\\{s/\\{%c%d\\{s),",
-			    p_ptr->name, get_prace(p_ptr), class_info[p_ptr->pclass].title, color_attr_to_char(p_ptr->cp_ptr->color), p_ptr->fruit_bat ? 'b' : '@',
+			sprintf(deep_dive_name[i], "%s, %s%s (\\{%c%c\\{s/\\{%c%d\\{s),",
+			    p_ptr->name, get_prace2(p_ptr), class_info[p_ptr->pclass].title, color_attr_to_char(p_ptr->cp_ptr->color), p_ptr->fruit_bat ? 'b' : '@',
 			    p_ptr->ghost ? 'r' : 's', p_ptr->max_plv);
 #else
-			sprintf(deep_dive_name[i], "%s, %s %s (\\{%c%d\\{s),",
-			    p_ptr->name, get_prace(p_ptr), class_info[p_ptr->pclass].title,
+			sprintf(deep_dive_name[i], "%s, %s%s (\\{%c%d\\{s),",
+			    p_ptr->name, get_prace2(p_ptr), class_info[p_ptr->pclass].title,
 			    p_ptr->ghost ? 'r' : 's', p_ptr->max_plv);
 #endif
 			strcpy(deep_dive_char[i], p_ptr->name);
@@ -4381,6 +4453,8 @@ int has_ball (player_type *p_ptr) {
  * returns FALSE if player no longer exists.
  *
  * TODO: find a better way for timed spells(set_*).
+ *
+ * Called every 5/6 of a player's dungeon turn
  */
 static bool process_player_end_aux(int Ind) {
 	player_type *p_ptr = Players[Ind];
@@ -4441,7 +4515,7 @@ static bool process_player_end_aux(int Ind) {
 	/* Misc. terrain effects */
 	if (!p_ptr->ghost) {
 		/* Generic terrain effects */
-		apply_effect(Ind);
+		apply_terrain_effect(Ind);
 
 		/* Drowning, but not ghosts */
 		if (c_ptr->feat == FEAT_DEEP_WATER) {
@@ -5428,7 +5502,7 @@ static bool process_player_end_aux(int Ind) {
 		/* Hack -- Use some fuel (sometimes) */
 #if 0
 		if (!artifact_p(o_ptr) && !(o_ptr->sval == SV_LITE_DWARVEN)
-		    && !(o_ptr->sval == SV_LITE_FEANOR) && (o_ptr->pval > 0) && (!o_ptr->name1))
+		    && !(o_ptr->sval == SV_LITE_FEANORIAN) && (o_ptr->pval > 0) && (!o_ptr->name1))
 #endif
 
 		/* Extract the item flags */
@@ -6296,8 +6370,9 @@ static void do_unstat(struct worldpos *wpos, bool fast_unstat) {
 	if (ge_special_sector && in_arena(wpos)) return;
 
 	// Anyone on this depth?
-	for (j = 1; j <= NumPlayers; j++)
+	for (j = 1; j <= NumPlayers; j++) {
 		if (inarea(&Players[j]->wpos, wpos)) return;
+	}
 
 	// If this level is static and no one is actually on it
 	//if (stale_level(wpos)) {
@@ -6428,40 +6503,32 @@ static void purge_old() {
 /*
  * TODO: Check for OT_GUILD (or guild will be mere den of cheeze)
  */
-void cheeze(object_type *o_ptr){
+void cheeze(object_type *o_ptr) {
 #if CHEEZELOG_LEVEL > 3
-	int j;
+	int j, owner;
+
 	/* check for inside a house */
-	for(j = 0; j < num_houses; j++){
-		if(inarea(&houses[j].wpos, &o_ptr->wpos)){
-			if(fill_house(&houses[j], FILL_OBJECT, o_ptr)){
-				if(houses[j].dna->owner_type == OT_PLAYER){
-					if(o_ptr->owner != houses[j].dna->owner){
-						if(o_ptr->level > lookup_player_level(houses[j].dna->owner))
-							s_printf("Suspicious item: (%d,%d) Owned by %s, in %s's house. (%d,%d)\n", o_ptr->wpos.wx, o_ptr->wpos.wy, lookup_player_name(o_ptr->owner), lookup_player_name(houses[j].dna->owner), o_ptr->level, lookup_player_level(houses[j].dna->owner));
-					}
-				}
-				else if(houses[j].dna->owner_type == OT_PARTY){
-					int owner;
-					if((owner = lookup_player_id(parties[houses[j].dna->owner].owner))){
-						if(o_ptr->owner != owner){
-							if(o_ptr->level > lookup_player_level(owner))
-								s_printf("Suspicious item: (%d,%d) Owned by %s, in %s party house. (%d,%d)\n", o_ptr->wpos.wx, o_ptr->wpos.wy, lookup_player_name(o_ptr->owner), parties[houses[j].dna->owner].name, o_ptr->level, lookup_player_level(owner));
-						}
-					}
-				}
-				else if(houses[j].dna->owner_type == OT_GUILD){
-					int owner;
-					if((owner = guilds[houses[j].dna->owner].master)){
-						if(o_ptr->owner != owner){
-							if(o_ptr->level > lookup_player_level(owner))
-								s_printf("Suspicious item: (%d,%d) Owned by %s, in %s party house. (%d,%d)\n", o_ptr->wpos.wx, o_ptr->wpos.wy, lookup_player_name(o_ptr->owner), guilds[houses[j].dna->owner].name, o_ptr->level, lookup_player_level(owner));
-						}
-					}
-				}
-				break;
+	for (j = 0; j < num_houses; j++) {
+		if (!inarea(&houses[j].wpos, &o_ptr->wpos) || !fill_house(&houses[j], FILL_OBJECT, o_ptr)) continue;
+
+		switch (houses[j].dna->owner_type) {
+		case OT_PLAYER:
+			if (o_ptr->owner != houses[j].dna->owner && o_ptr->level > lookup_player_level(houses[j].dna->owner))
+				s_printf("Suspicious item: (%d,%d) Owned by %s, in %s's house. (%d,%d)\n", o_ptr->wpos.wx, o_ptr->wpos.wy, lookup_player_name(o_ptr->owner), lookup_player_name(houses[j].dna->owner), o_ptr->level, lookup_player_level(houses[j].dna->owner));
+			break;
+		case OT_PARTY:
+			if ((owner = lookup_player_id(parties[houses[j].dna->owner].owner)) && o_ptr->owner != owner) {
+				if (o_ptr->level > lookup_player_level(owner))
+					s_printf("Suspicious item: (%d,%d) Owned by %s, in %s party house. (%d,%d)\n", o_ptr->wpos.wx, o_ptr->wpos.wy, lookup_player_name(o_ptr->owner), parties[houses[j].dna->owner].name, o_ptr->level, lookup_player_level(owner));
+			}
+			break;
+		case OT_GUILD:
+			if ((owner = guilds[houses[j].dna->owner].master) && o_ptr->owner != owner) {
+				if (o_ptr->level > lookup_player_level(owner))
+					s_printf("Suspicious item: (%d,%d) Owned by %s, in %s party house. (%d,%d)\n", o_ptr->wpos.wx, o_ptr->wpos.wy, lookup_player_name(o_ptr->owner), guilds[houses[j].dna->owner].name, o_ptr->level, lookup_player_level(owner));
 			}
 		}
+		break;
 	}
 #endif // CHEEZELOG_LEVEL > 3
 }
@@ -6531,24 +6598,23 @@ void cheeze_trad_house() {
 
 
 /* Change item mode of all items inside a house to the according house owner mode */
-void house_contents_chmod(object_type *o_ptr){
+void house_contents_chmod(object_type *o_ptr) {
 #if CHEEZELOG_LEVEL > 3
-	int j;
+	int j, owner;
 
 	/* check for inside a house */
-	for (j = 0; j < num_houses; j++){
-		if (inarea(&houses[j].wpos, &o_ptr->wpos)){
-			if (fill_house(&houses[j], FILL_OBJECT, o_ptr)){
-				if (houses[j].dna->owner_type == OT_PLAYER)
-					o_ptr->mode = lookup_player_mode(houses[j].dna->owner));
-				else if (houses[j].dna->owner_type == OT_PARTY) {
-					int owner;
-
-					if ((owner = lookup_player_id(parties[houses[j].dna->owner].owner)))
-						o_ptr->mode = lookup_player_mode(owner));
-				}
+	for (j = 0; j < num_houses; j++) {
+		if (inarea(&houses[j].wpos, &o_ptr->wpos) && fill_house(&houses[j], FILL_OBJECT, o_ptr)) {
+			switch (houses[j].dna->owner_type) {
+			case OT_PLAYER:
+				o_ptr->mode = lookup_player_mode(houses[j].dna->owner));
+				break;
+			case OT_PARTY:
+				if ((owner = lookup_player_id(parties[houses[j].dna->owner].owner)))
+					o_ptr->mode = lookup_player_mode(owner));
 				break;
 			}
+			break;
 		}
 	}
 #endif // CHEEZELOG_LEVEL > 3
@@ -6590,26 +6656,15 @@ void tradhouse_contents_chmod() {
 
 /*
  * The purpose of this function is to scan through all the
- * game objects on the surface of the world. Objects which
- * are not owned will be ignored. Owned items will be checked.
- * If they are in a house, they will be compared against the
- * house owner. If this fails, the level difference will be
- * used to calculate some chance for the object's deletion.
+ * game objects in the world.
  *
- * In the case for non house objects, essentially a TTL is
+ * In the case for non house/inn objects, essentially a TTL is
  * set. This protects them from instant loss, should a player
  * drop something just at the wrong time, but it should get
- * rid of some town junk. Artifacts should probably resist
- * this clearing.
- */
-/*
- * TODO:
- * - this function should handle items in 'traditional' houses too
- * - maybe rename this function (scan_objects and scan_objs...)
+ * rid of some town junk.
  */
 static void scan_objs() {
 	int i, cnt = 0, dcnt = 0;
-	bool sj;
 	object_type *o_ptr;
 	cave_type **zcave;
 
@@ -6620,58 +6675,34 @@ static void scan_objs() {
 		o_ptr = &o_list[i];
 		if (!o_ptr->k_idx) continue;
 
-		sj = FALSE;
+		/* Skip monster inventory items (hm why actually) */
+		if (o_ptr->held_m_idx) continue;
+
 		/* not dropped on player death or generated on the floor? (or special stuff) */
 		if (o_ptr->marked2 == ITEM_REMOVAL_NEVER ||
 		    o_ptr->marked2 == ITEM_REMOVAL_HOUSE)
 			continue;
 
-		/* hack for monster trap items */
-		/* XXX noisy warning, eh? */ /* This is unsatisfactory. */
-		if (!in_bounds_array(o_ptr->iy, o_ptr->ix) &&
-		    /* There was an old woman who swallowed a fly... */
-		    in_bounds_array(255 - o_ptr->iy, o_ptr->ix)) {
-			sj = TRUE;
-			o_ptr->iy = 255 - o_ptr->iy;
-		}
-
 		/* Make town Inns a safe place to store (read: cheeze) items,
 		   at least as long as the town level is allocated. - C. Blue */
 		if ((zcave = getcave(&o_ptr->wpos))
-		    && in_bounds_array(o_ptr->iy, o_ptr->ix) //paranoia or monster trap? or tradhouse?
-		    && (f_info[zcave[o_ptr->iy][o_ptr->ix].feat].flags1 & FF1_PROTECTED))
-			continue;
+		    && in_bounds_array(o_ptr->iy, o_ptr->ix) //paranoia, as we checked for held_m_idx above already
+		    && (f_info[zcave[o_ptr->iy][o_ptr->ix].feat].flags1 & FF1_PROTECTED)) continue;
 
 		/* check items on the world's surface */
 		if (!o_ptr->wpos.wz && cfg.surface_item_removal) {
-			if (in_bounds_array(o_ptr->iy, o_ptr->ix)) { //paranoia or monster trap? or tradhouse?
+			if (in_bounds_array(o_ptr->iy, o_ptr->ix)) { //paranoia
 				/* Artifacts and objects that were inscribed and dropped by
 				the dungeon master or by unique monsters on their death
 				stay n times as long as cfg.surface_item_removal specifies */
 				if (o_ptr->marked2 == ITEM_REMOVAL_QUICK) {
 					if (++o_ptr->marked >= 10) {
-						/* handle monster trap, if this item was part of one */
-						if (sj) {
-							erase_mon_trap(&o_ptr->wpos, o_ptr->iy, o_ptr->ix);
-							sj = FALSE;
-						} else
-
-						/* normal object */
 						delete_object_idx(i, TRUE);
-
 						dcnt++;
 					}
 				} else if (o_ptr->marked2 == ITEM_REMOVAL_MONTRAP) {
 					if (++o_ptr->marked >= 120) {
-						/* handle monster trap, if this item was part of one */
-						if (sj) {
-							erase_mon_trap(&o_ptr->wpos, o_ptr->iy, o_ptr->ix);
-							sj = FALSE;
-						} else
-
-						/* normal object */
 						delete_object_idx(i, TRUE);
-
 						dcnt++;
 					}
 				} else if (++o_ptr->marked >= ((like_artifact_p(o_ptr) || /* stormy too */
@@ -6680,15 +6711,7 @@ static void scan_objs() {
 				    + (o_ptr->marked2 == ITEM_REMOVAL_DEATH_WILD ? cfg.death_wild_item_removal : 0)
 				    + (o_ptr->marked2 == ITEM_REMOVAL_LONG_WILD ? cfg.long_wild_item_removal : 0)
 				    ) {
-					/* handle monster trap, if this item was part of one */
-					if (sj) {
-						erase_mon_trap(&o_ptr->wpos, o_ptr->iy, o_ptr->ix);
-						sj = FALSE;
-					} else
-
-					/* normal object */
 					delete_object_idx(i, TRUE);
-
 					dcnt++;
 				}
 			}
@@ -6709,22 +6732,14 @@ static void scan_objs() {
 
 		/* check items on dungeon/tower floors */
 		else if (o_ptr->wpos.wz && cfg.dungeon_item_removal) {
-			if (in_bounds_array(o_ptr->iy, o_ptr->ix)) { //paranoia or monster trap? or tradhouse?
+			if (in_bounds_array(o_ptr->iy, o_ptr->ix)) { //paranoia
 				/* Artifacts and objects that were inscribed and dropped by
 				the dungeon master or by unique monsters on their death
 				stay n times as long as cfg.surface_item_removal specifies */
 				if (++o_ptr->marked >= ((artifact_p(o_ptr) ||
 				    (o_ptr->note && !o_ptr->owner)) ?
 				    cfg.dungeon_item_removal * 3 : cfg.dungeon_item_removal)) {
-					/* handle monster trap, if this item was part of one */
-					if (sj) {
-						erase_mon_trap(&o_ptr->wpos, o_ptr->iy, o_ptr->ix);
-						sj = FALSE;
-					} else
-
-					/* normal object */
 					delete_object_idx(i, TRUE);
-
 					dcnt++;
 				}
 			}
@@ -6742,9 +6757,6 @@ static void scan_objs() {
 			/* count amount of items that were checked */
 			cnt++;
 		}
-
-		/* restore monster trap hack */
-		if (sj) o_ptr->iy = 255 - o_ptr->iy; /* mega-hack: never inbounds */
 	}
 
 	/* log result */
@@ -7472,8 +7484,9 @@ static void process_world(void) {
 #ifdef MUCHO_RUMOURS
 		/* the_sandman prints a rumour */
 		if (NumPlayers) {
+			/* Pick the 1st player arbitrarily, it's broadcast to the rest due to how fortune() works.. */
 			msg_print(1, "Suddenly a thought comes to your mind:");
-			fortune(1, TRUE);
+			fortune(1, 2);
 		}
 #endif
 	}
@@ -7855,9 +7868,18 @@ void process_player_change_wpos(int Ind) {
 	char o_name_short[ONAME_LEN];
 	bool smooth_ambient = FALSE, travel_ambient = FALSE;
 
+	/* Prevent exploiting /undoskills by invoking it right before each level-up:
+	   Discard the possibility to undoskills when we venture into a dungeon again. */
+	if (!p_ptr->wpos_old.wz && p_ptr->wpos.wz) p_ptr->reskill_possible = FALSE;
+
 	/* un-snow */
-	p_ptr->temp_misc_2 &= ~0x01;
+	p_ptr->temp_misc_1 &= ~0x08;
 	//update_player(Ind); //un-snowing restores lack of visibility by others - required?
+
+#ifdef USE_SOUND_2010
+	if ((l_ptr = getfloor(&p_ptr->wpos_old)) && (l_ptr->flags1 & LF1_NO_GHOST))
+		sound(Ind, "monster_roar", NULL, SFX_TYPE_STOP, FALSE);
+#endif
 
 	/* IDDC specialties */
 	if (in_irondeepdive(&p_ptr->wpos_old)) {
@@ -7913,7 +7935,7 @@ void process_player_change_wpos(int Ind) {
 	/* reset void gate coordinates */
 	if (p_ptr->voidx) {
 		if (getcave(&p_ptr->wpos_old))
-			cave_set_feat(&p_ptr->wpos_old, p_ptr->voidy, p_ptr->voidx, twall_erosion(&p_ptr->wpos_old, p_ptr->voidy, p_ptr->voidx));
+			cave_set_feat(&p_ptr->wpos_old, p_ptr->voidy, p_ptr->voidx, twall_erosion(&p_ptr->wpos_old, p_ptr->voidy, p_ptr->voidx, FEAT_FLOOR));
 		p_ptr->voidx = 0;
 		p_ptr->voidy = 0;
 	}
@@ -8210,18 +8232,22 @@ void process_player_change_wpos(int Ind) {
 		/* make sure we aren't in an "icky" location */
 		emergency_x = 0; emergency_y = 0; tries = 0;
 		do {
-			starty = rand_int((l_ptr ? l_ptr->hgt : MAX_HGT)-3)+1;
-			startx = rand_int((l_ptr ? l_ptr->wid : MAX_WID)-3)+1;
+			starty = rand_int((l_ptr ? l_ptr->hgt : MAX_HGT) - 3) + 1;
+			startx = rand_int((l_ptr ? l_ptr->wid : MAX_WID) - 3) + 1;
 			if (cave_floor_bold(zcave, starty, startx)) {
 				emergency_x = startx;
 				emergency_y = starty;
 			}
 		}
-		while (  ((zcave[starty][startx].info & CAVE_ICKY)
+		while (((zcave[starty][startx].info & (CAVE_ICKY | CAVE_STCK | CAVE_NEST_PIT)) /* Don't recall into houses. Stck/Nest-pit shouldn't really happen on world surface though.. */
 			|| (zcave[starty][startx].feat == FEAT_DEEP_WATER)
+			|| (zcave[starty][startx].feat == FEAT_DEEP_LAVA)
 			|| (zcave[starty][startx].feat == FEAT_SICKBAY_AREA) /* don't recall him into sickbay areas */
+			|| (zcave[starty][startx].info & CAVE_PROT) /* don't recall into stables or inns */
+			|| (f_info[zcave[starty][startx].feat].flags1 & FF1_PROTECTED)
+			|| (zcave[starty][startx].feat == FEAT_SHOP) /* Prevent landing on a store entrance */
 			|| (!cave_floor_bold(zcave, starty, startx)))
-			&& (++tries < 10000) );
+			&& (++tries < 10000));
 		if (tries == 10000 && emergency_x) {
 			startx = emergency_x;
 			starty = emergency_y;
@@ -8337,7 +8363,7 @@ void process_player_change_wpos(int Ind) {
 		if (x < 1 || y < 1 || x > p_ptr->cur_wid - 2 || y > p_ptr->cur_hgt - 2)
 			continue;
 
-		/* should somewhat stay away from certain locations? */
+		/* should somewhat stay away from certain locations? (DK escape beacons) */
 		if (p_ptr->avoid_loc)
 			for (d = 0; d < p_ptr->avoid_loc; d++)
 				if (distance(y, x, p_ptr->avoid_loc_y[d], p_ptr->avoid_loc_x[d]) < 8)
@@ -8958,6 +8984,7 @@ void dungeon(void) {
 				parties[Players[i]->party].set_attr = FALSE;
 				if (k == TERM_L_DARK - 1) k++; //reserved for iron teams
 				if (k == TERM_SLATE - 1) k++; //skip too similar white tone maybe, QoL
+				//if (k == TERM_ORANGE - 1) k++; //slightly cluttery with orange-coloured depths
 				if (k == TERM_L_WHITE - 1) k++; //skip too similar white tone maybe, QoL
 				parties[Players[i]->party].attr = ++k;
 				k = k % TERM_MULTI;

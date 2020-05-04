@@ -533,6 +533,17 @@ byte flick_colour(byte attr) {
 		if (attr & TERM_BNW) attr = TERM_BNW;
 		flags = 0x0;
 	}
+	if (is_older_than(&server_version, 4, 7, 3, 0, 0, 0)) {
+		switch (attr) {
+		case TERM_OLD3_BNW: attr = TERM_BNW; break;
+		case TERM_OLD3_BNWM: attr = TERM_BNWM; break;
+		case TERM_OLD3_BNWSR: attr = TERM_BNWSR; break;
+		case TERM_OLD3_BNWKS: attr = TERM_BNWKS; break;
+		case TERM_OLD3_BNWKS2: attr = TERM_BNWKS2; break;
+		case TERM_OLD3_PVPBB: attr = TERM_PVPBB; break;
+		case TERM_OLD3_PVP: attr = TERM_PVP; break;
+		}
+	}
  #endif
 #else
 	attr = attr & 0x1F; /* cut flags off actual colour */
@@ -733,6 +744,21 @@ byte flick_colour(byte attr) {
 		return (!rand_int(2) ? (rand_int(2) ? TERM_YELLOW : (rand_int(2) ? TERM_L_RED : TERM_RED)) : TERM_DARK);
  #endif
 #endif
+
+	case TERM_SELECTOR:
+		switch (ticks % 14) {
+		case 0: case 1:
+		case 14: case 15:
+			return TERM_UMBER;
+		case 2: case 3:
+		case 12: case 13:
+			return TERM_ORANGE;
+		case 4: case 5: case 6:
+		case 7: case 8:
+		case 9: case 10: case 11:
+			return TERM_YELLOW;
+		}
+
 	default:
 		return(attr);
 	}
@@ -775,11 +801,10 @@ void flicker() {
 #ifdef EXTENDED_COLOURS_PALANIM
 				if (attr < TERM_MULTI || (attr >= TERMA_DARK && attr <= TERMA_L_UMBER)) continue;
 #else
- #ifdef EXTENDED_BG_COLOURS
-				if (attr < TERM_MULTI || attr == TERM2_BLUE) continue;
- #else
 				if (attr < TERM_MULTI) continue;
- #endif
+#endif
+#ifdef EXTENDED_BG_COLOURS
+				if (attr == TERM2_BLUE) continue;
 #endif
 
 #ifdef ATMOSPHERIC_INTRO
@@ -956,17 +981,15 @@ static void Term_fresh_row_text_wipe(int y) {
 			}
 
 			/* Save the new color */
-#ifdef EXTENDED_COLOURS_PALANIM
+ #ifdef EXTENDED_COLOURS_PALANIM
 			if (na >= TERMA_DARK && na <= TERMA_L_UMBER) fa = na - TERMA_OFFSET + 16; /* Use 'real' extended terminal colours ie 16..31 */
 			else
-#endif
-#ifdef EXTENDED_BG_COLOURS
-			if (na >= TERM_MULTI && na != TERM2_BLUE)
-#else
-			if (na >= TERM_MULTI)
-#endif
-				fa = flick_colour(na);
+ #endif
+			if (na >= TERM_MULTI) fa = flick_colour(na);
 			else fa = na;
+ #ifdef EXTENDED_BG_COLOURS
+			if (na == TERM2_BLUE) fa = na;
+ #endif
 		}
 
 		/* Start a new thread, if needed */
@@ -997,17 +1020,15 @@ static void Term_fresh_row_text_wipe(int y) {
 			}
 
 			/* Save the new color */
-#ifdef EXTENDED_COLOURS_PALANIM
+ #ifdef EXTENDED_COLOURS_PALANIM
 			if (na >= TERMA_DARK && na <= TERMA_L_UMBER) fa = na - TERMA_OFFSET + 16; /* Use 'real' extended terminal colours ie 16..31 */
 			else
-#endif
-#ifdef EXTENDED_BG_COLOURS
-			if (na >= TERM_MULTI && na != TERM2_BLUE)
-#else
-			if (na >= TERM_MULTI)
-#endif
-				fa = flick_colour(na);
+ #endif
+			if (na >= TERM_MULTI) fa = flick_colour(na);
 			else fa = na;
+ #ifdef EXTENDED_BG_COLOURS
+			if (na == TERM2_BLUE) fa = na;
+ #endif
 
 			fx = x;
 		}
@@ -1148,19 +1169,16 @@ static void Term_fresh_row_text_text(int y) {
 			}
 
 			/* Save the new color */
-#ifdef EXTENDED_COLOURS_PALANIM
-			if (na >= TERM_MULTI && (na < TERMA_DARK || na > TERMA_L_UMBER)) {
-#else
- #ifdef EXTENDED_BG_COLOURS
-			if (na >= TERM_MULTI && na != TERM2_BLUE) {
+ #ifdef EXTENDED_COLOURS_PALANIM
+			if (na >= TERM_MULTI && (na < TERMA_DARK || na > TERMA_L_UMBER))
  #else
-			if (na >= TERM_MULTI) {
+			if (na >= TERM_MULTI)
  #endif
-#endif
 				fa = flick_colour(na);
-			} else {
-				fa = na;
-			}
+			else fa = na;
+ #ifdef EXTENDED_BG_COLOURS
+			if (na == TERM2_BLUE) fa = na;
+ #endif
 
 			fx = x;
 		}

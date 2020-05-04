@@ -78,7 +78,7 @@ static cptr ring_adj[MAX_ROCKS] = {
 
 	"Fluorspar", "Agate",
 };
-/* Specialty for flavour_hacks(): Don't use unfitting materials for artifacts */
+/* Specialty for flavor_hacks(): Don't use unfitting materials for artifacts */
 static bool ring_cheap[MAX_ROCKS] = {
 	0, 0, 0, 0, 0,   0, 1, 0, 0, 0,   0, 1, 0, 1, 0,   0, 0, 1, 0, 0,
 	0, 0, 0, 0, 0,   0, 0, 0, 1, 0,   0, 0, 0, 0, 0,   0, 0, 1, 0, 1,
@@ -153,7 +153,7 @@ static cptr amulet_adj[MAX_AMULETS] = {
 	"Meerschaum", "Jade", "Red Opal",
 	//"Glimmer-Stone",
 };
-/* Specialty for flavour_hacks(): Don't use unfitting materials for artifacts */
+/* Specialty for flavor_hacks(): Don't use unfitting materials for artifacts */
 static bool amulet_cheap[MAX_AMULETS] = {
 	0, 1, 1, 0, 0,   0, 1, 0, 0, 1,   1, 0, 0, 0, 0,   0, 0, 0, 0, 1,
 	1, 1, 1, 0, 1,   1, 0, 0, 0, 0,   1, 0, 0, 0, 1,   0, 0, 0, 0, 1,
@@ -362,9 +362,9 @@ static cptr potion_adj[MAX_COLORS] = {
     static byte potion_col[MAX_COLORS] = {
   #endif
 	TERM_ELEC, TERM_L_UMBER, TERM_GREEN, TERM_RED,
-	TERM_ORANGE, TERM_ACID, TERM_L_BLUE, TERM_BLUE,
+	TERM_ORANGE, TERM_COLD, TERM_L_BLUE, TERM_BLUE,
 	TERM_ELEC, TERM_L_DARK, TERM_UMBER, TERM_SHAR,
-	TERM_COLD, TERM_L_GREEN, TERM_CONF, TERM_RED,
+	TERM_ACID, TERM_L_GREEN, TERM_CONF, TERM_RED,
 	TERM_L_BLUE, TERM_BLUE, TERM_GREEN, TERM_RED,
 	TERM_LITE, TERM_GREEN, TERM_POIS, TERM_SLATE,
 	TERM_ACID, TERM_L_WHITE, TERM_VIOLET, TERM_L_BLUE,
@@ -985,7 +985,7 @@ void flavor_hacks(void) {
 					if (ring_cheap[j]) continue;
 					/* Don't steal colour of another INSTA_ART that has already found its fitting colour */
 					k = lookup_kind(TV_RING, j);
-					if ((k_info[k].flags3 & TR3_INSTA_ART) && amulet_col[j] == k_info[k].k_attr) continue;
+					if ((k_info[k].flags3 & TR3_INSTA_ART) && ring_col[j] == k_info[k].k_attr) continue;
 					/* Ok! Switch them */
 					temp_col = ring_col[k_info[i].sval];
 					temp_adj = ring_adj[k_info[i].sval];
@@ -1015,7 +1015,7 @@ void flavor_hacks(void) {
 				if (k_info[i].sval == SV_RING_POWER && strcmp(ring_adj[j], "Plain Gold")) continue;
 				/* Don't steal colour of another INSTA_ART that has already found its fitting colour */
 				k = lookup_kind(TV_RING, j);
-				if ((k_info[k].flags3 & TR3_INSTA_ART) && amulet_col[j] == k_info[k].k_attr
+				if ((k_info[k].flags3 & TR3_INSTA_ART) && ring_col[j] == k_info[k].k_attr
 				    && k_info[i].sval != SV_RING_POWER) //special hack for The One Ring: (part 2/3)
 					continue;
 				/* Ok! Switch them */
@@ -2062,6 +2062,9 @@ void object_desc(int Ind, char *buf, object_type *o_ptr, int pref, int mode) {
 	object_kind	*k_ptr = &k_info[o_ptr->k_idx];
 	bool skip_base_article = FALSE;
 	bool special_rop = (o_ptr->tval == TV_RING && o_ptr->sval == SV_RING_SPECIAL);
+#ifdef ENABLE_EXCAVATION
+	char 		tmp_modstr[ONAME_LEN];
+#endif
 
 	/* Extract some flags */
 	object_flags(o_ptr, &f1, &f2, &f3, &f4, &f5, &f6, &esp);
@@ -2364,6 +2367,9 @@ void object_desc(int Ind, char *buf, object_type *o_ptr, int pref, int mode) {
 			/* hack for mindcrafter spell scrolls -> spell crystals - C. Blue */
 			if (o_ptr->pval >= __lua_M_FIRST && o_ptr->pval <= __lua_M_LAST)
 				basenm = "& Spell Crystal~ of #";
+			/* hack for priest spell scrolls -> prayer scrolls - C. Blue */
+			if (o_ptr->pval >= __lua_P_FIRST && o_ptr->pval <= __lua_P_LAST)
+				basenm = "& Prayer Scroll~ of #";
 			//basenm = k_name + k_ptr->name;
 			if (o_ptr->sval == SV_SPELLBOOK) {
 				if (school_spells[o_ptr->pval].name)
@@ -2379,6 +2385,17 @@ void object_desc(int Ind, char *buf, object_type *o_ptr, int pref, int mode) {
 
 		case TV_MONSTER:
 			break;
+
+#ifdef ENABLE_EXCAVATION
+		case TV_CHEMICAL:
+			if (o_ptr->sval == SV_MIXTURE) {
+				mixture_flavour(o_ptr, tmp_modstr);
+				modstr = tmp_modstr;
+			}
+			break;
+		case TV_CHARGE:
+			break;
+#endif
 
 		/* Used in the "inventory" routine */
 		default:
@@ -3513,6 +3530,8 @@ cptr item_activation(object_type *o_ptr) {
 		return "destroying doors and traps every 5..30+d10 turns";
 	case ART_SOULCURE:
 		return "holy prayer (+20 AC) every 50..150+d100 turns";
+	case ART_GOGGLES_DM:
+		return "identifying possessions";
 	case ART_AMUGROM:
 		return "temporary resistance boost every 50..150+d50 turns";
 	case ART_HELLFIRE:
@@ -3693,7 +3712,7 @@ cptr item_activation(object_type *o_ptr) {
 
 	if (o_ptr->tval == TV_BOOK && is_custom_tome(o_ptr->sval))
 		//return "transcribing a spell scroll or spell crystal into it";
-		return format("transcribing up to %d spell scrolls or spell crystals into it", o_ptr->bpval);
+		return format("transcribing up to %d spell/prayer scrolls or spell crystals into it", o_ptr->bpval);
 
 	if (o_ptr->tval == TV_RUNE) {
 		if (o_ptr->sval < RCRAFT_MAX_ELEMENTS)
@@ -3701,6 +3720,15 @@ cptr item_activation(object_type *o_ptr) {
 		else
 			return "splitting into two basic tier runes";
 	}
+
+#ifdef ENABLE_EXCAVATION
+	if (o_ptr->tval == TV_CHEMICAL) {
+		if (o_ptr->sval == SV_WOOD_CHIPS) return "heating up to get processed into charcoal";
+		return "combining with other chemical ingredients or mixtures";
+	}
+	if (o_ptr->tval == TV_CHARGE) return(format("ignition after %d turns", o_ptr->pval));
+	if (o_ptr->tval == TV_TOOL && o_ptr->sval == SV_TOOL_GRINDER) return "grinding solid metal to powder";
+#endif
 
 	/* Oops */
 	return NULL;
@@ -5107,12 +5135,15 @@ bool identify_combo_aux(int Ind, object_type *o_ptr, bool full, int item) {
 
  #if 1 /* display trigger chance for magic devices? */
 			if ((is_magic_device(o_ptr->tval) || (f3 & TR3_ACTIVATE))
+  #ifdef ENABLE_EXCAVATION
+			    && o_ptr->tval != TV_CHEMICAL && o_ptr->tval != TV_CHARGE
+  #endif
 			    && o_ptr->tval != TV_BOOK) {
 				if (!get_skill(p_ptr, SKILL_ANTIMAGIC)) {
 					byte chance, permille;
 
 					chance = activate_magic_device_chance(Ind, o_ptr, &permille);
-					if (chance == 100) fprintf(fff, "\377WYou have a 99.%d%% chance to successfully activate this magic device.\n", permille);
+					if (chance == 99) fprintf(fff, "\377WYou have a 99.%d%% chance to successfully activate this magic device.\n", permille);
 					else fprintf(fff, "\377WYou have a %d%% chance to successfully activate this magic device.\n", chance);
 				} else
 					fprintf(fff, "\377DAs an unbeliever you cannot activate this magic device.\n");
@@ -5189,9 +5220,9 @@ bool identify_combo_aux(int Ind, object_type *o_ptr, bool full, int item) {
 
 		//maybe todo: distinguish TR5_WHITE_LIGHT?
 		if (f4 & TR4_FUEL_LITE)
-			fprintf(fff, "It provides light (radius %d) when fueled.\n", radius);
+			fprintf(fff, "It provides %slight (radius %d) when fueled.\n", (f5 & TR5_WHITE_LIGHT) ? "white " : "", radius);
 		else if (radius)
-			fprintf(fff, "It provides light (radius %d) forever.\n", radius);
+			fprintf(fff, "It provides %slight (radius %d) forever.\n", (f5 & TR5_WHITE_LIGHT) ? "white " : "", radius);
 		else
 			fprintf(fff, "It never provides light.\n");
 	}
@@ -5456,7 +5487,7 @@ bool identify_combo_aux(int Ind, object_type *o_ptr, bool full, int item) {
 	if (f3 & (TR3_WRAITH))
 		fprintf(fff, "It renders you incorporeal.\n");
 	if ((o_ptr->tval != TV_LITE) && ((f3 & (TR3_LITE1)) || (f4 & (TR4_LITE2)) || (f4 & (TR4_LITE3))))
-		fprintf(fff, "It provides light.\n");
+		fprintf(fff, "It provides %slight.\n", (f5 & TR5_WHITE_LIGHT) ? "white " : "");
 	if (esp) {
 		if (esp & ESP_ALL) fprintf(fff, "It gives telepathic powers.\n");
 		else {
@@ -5780,12 +5811,15 @@ bool identify_combo_aux(int Ind, object_type *o_ptr, bool full, int item) {
 
 #if 1 /* display trigger chance for magic devices? */
 	if ((eff_full && (is_magic_device(o_ptr->tval) || (f3 & TR3_ACTIVATE)))
+ #ifdef ENABLE_EXCAVATION
+	    && o_ptr->tval != TV_CHEMICAL && o_ptr->tval != TV_CHARGE
+ #endif
 	    && o_ptr->tval != TV_BOOK) {
 		if (!get_skill(p_ptr, SKILL_ANTIMAGIC)) {
 			byte chance, permille;
 
 			chance = activate_magic_device_chance(Ind, o_ptr, &permille);
-			if (chance == 100) fprintf(fff, "\377WYou have a 99.%d%% chance to successfully activate this magic device.\n", permille);
+			if (chance == 99) fprintf(fff, "\377WYou have a 99.%d%% chance to successfully activate this magic device.\n", permille);
 			else fprintf(fff, "\377WYou have a %d%% chance to successfully activate this magic device.\n", chance);
 		} else
 			fprintf(fff, "\377DAs an unbeliever you cannot activate this magic device.\n");
@@ -6240,8 +6274,8 @@ void display_inven(int Ind) {
 
 	for (i = 0; i < z; i++) {
 		if (p_ptr->inventory[i].auto_insc) {
-			Send_apply_auto_insc(Ind, i);
 			p_ptr->inventory[i].auto_insc = FALSE;
+			Send_apply_auto_insc(Ind, i);
 		}
 	}
 
@@ -6314,8 +6348,8 @@ void display_equip(int Ind) {
 
 	for (i = INVEN_WIELD; i < INVEN_TOTAL; i++) {
 		if (p_ptr->inventory[i].auto_insc) {
-			Send_apply_auto_insc(Ind, i);
 			p_ptr->inventory[i].auto_insc = FALSE;
+			Send_apply_auto_insc(Ind, i);
 		}
 	}
 }

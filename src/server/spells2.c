@@ -4319,6 +4319,9 @@ bool recharge_aux(int Ind, int item, int pow) {
 
 	/* Recharge wand/staff -- Note: Currently charge_wand()/charge_staff() are used only for item generation but not here. */
 	else {
+		/* Allow !D inscription to auto-discharge an item before recharging it? */
+		if (check_guard_inscription(o_ptr->note, 'D')) o_ptr->pval = 0;
+
 		/* Recharge power */
 		i = (pow + 100 - lev - (10 * o_ptr->pval)) / 15;
 
@@ -4328,7 +4331,7 @@ bool recharge_aux(int Ind, int item, int pow) {
 		/* Back-fire XXX XXX XXX */
 		if (rand_int(i) == 0) {
 			/* a chance to just discharge it instead of destroying it */
-			if (!rand_int(2)) {
+			if (rand_int(in_irondeepdive(&p_ptr->wpos) ? 6 : 2)) {
 				msg_print(Ind, "There is a static discharge.");
 				o_ptr->pval = 0;
 				o_ptr->ident |= ID_EMPTY;
@@ -5446,6 +5449,18 @@ bool probing(int Ind) {
 			/* Learn all of the non-spell, non-treasure flags */
 			lore_do_probe(i);
 
+#if 0
+			if (admin_p(Ind)) {
+				switch(m_ptr->r_idx) {
+				case RI_TARGET_DUMMY1:
+				case RI_TARGET_DUMMY2:
+				case RI_TARGET_DUMMYA1:
+				case RI_TARGET_DUMMYA2:
+					msg_format(Ind, "extra=%d", m_ptr->extra); //show snowiness
+				}
+			}
+#endif
+
 			/* Probe worked */
 			probe = TRUE;
 		}
@@ -5493,6 +5508,13 @@ void destroy_area(struct worldpos *wpos, int y1, int x1, int r, bool full, byte 
 	/* Can't trigger within Vault? - note: this prevents exploit as well as death-_trap_ at once :) */
 	if (zcave[y1][x1].info & CAVE_ICKY) return;
 
+	/* Paranoia -- Enforce maximum range */
+	//if (r > 15) r = 15;
+
+#ifdef USE_SOUND_2010
+	sound_near_area(y1, x1, r, wpos, "destruction", NULL, SFX_TYPE_NO_OVERLAP);
+#endif
+
 	/* Big area of affect */
 	for (y = (y1 - r); y <= (y1 + r); y++) {
 		for (x = (x1 - r); x <= (x1 + r); x++) {
@@ -5516,7 +5538,7 @@ void destroy_area(struct worldpos *wpos, int y1, int x1, int r, bool full, byte 
 				/* Message */
 				msg_print(Ind, "\377oThere is a searing blast of light and a terrible shockwave!");
 #ifdef USE_SOUND_2010
-				sound(Ind, "destruction", NULL, SFX_TYPE_MISC, FALSE);
+				//sound(Ind, "destruction", NULL, SFX_TYPE_MISC, FALSE);
 #endif
 
 				/* Blind the player */
@@ -5683,7 +5705,7 @@ void earthquake(struct worldpos *wpos, int cy, int cx, int r) {
 	/* among others, make sure town areas aren't affected.. */
 	if (!allow_terraforming(wpos, FEAT_WALL_EXTRA)) return;
 
-	/* Paranoia -- Dnforce maximum range */
+	/* Paranoia -- Enforce maximum range */
 	if (r > 12) r = 12;
 
 	/* Clear the "maximal blast" area */
@@ -5696,6 +5718,10 @@ void earthquake(struct worldpos *wpos, int cy, int cx, int r) {
 	/* No one has taken any damage from this earthquake yet - mikaelh */
 	for (Ind = 1; Ind <= NumPlayers; Ind++)
 		Players[Ind]->total_damage = 0;
+
+#ifdef USE_SOUND_2010
+	sound_near_area(cy, cx, r, wpos, "earthquake", NULL, SFX_TYPE_NO_OVERLAP);
+#endif
 
 	/* Check around the epicenter */
 	for (dy = -r; dy <= r; dy++) {
@@ -5746,7 +5772,7 @@ void earthquake(struct worldpos *wpos, int cy, int cx, int r) {
 			everyone_lite_spot(wpos, y, x);
 
 #ifdef USE_SOUND_2010
-			if (c_ptr->m_idx < 0) sound(-c_ptr->m_idx, "earthquake", NULL, SFX_TYPE_NO_OVERLAP, FALSE);
+			//if (c_ptr->m_idx < 0) sound(-c_ptr->m_idx, "earthquake", NULL, SFX_TYPE_NO_OVERLAP, FALSE);
 #endif
 
 			/* Skip the epicenter */
@@ -6770,6 +6796,8 @@ bool cast_snowflake(worldpos *wpos, int x, int interval) {
  */
 bool cast_fireworks(worldpos *wpos, int x, int y, int typ) {
 	char pattacker[80];
+	dungeon_type *d_ptr = getdungeon(wpos);
+
 	strcpy(pattacker, "");
 
 	int flg = PROJECT_DUMY | PROJECT_GRID | PROJECT_STAY;
@@ -6801,7 +6829,9 @@ bool cast_fireworks(worldpos *wpos, int x, int y, int typ) {
 #else
 	/* Adjustments - mikaelh */
 	project_interval = 5;
-	project_time = 8 + 8; /* X units to rise into the air, X units to explode */
+	/* Fireworks flies lower inside dungeons */
+	if (wpos->wz && !(d_ptr && d_ptr->type == DI_CLOUD_PLANES)) project_time = 4 + 4;
+	else project_time = 8 + 8; /* X units to rise into the air, X units to explode */
 	//if (project_time_effect == EFF_FIREWORKS3) project_time += 2 + 2;
 #endif
 
@@ -8463,7 +8493,7 @@ void rune_combine_aux(int Ind, int item) {
 	msg_format(Ind, "There is a coupling of magic.");
 	inven_item_increase(Ind, p_ptr->current_activation, -number);
 	inven_item_increase(Ind, item, -number);
-	if (p_ptr->current_activation > item) { //higher value (lower in inventory) first; to preserve indexes
+	if (p_ptr->current_activation > item) { //higher value (lower in inventory) first; to preserve indices
 		inven_item_optimize(Ind, p_ptr->current_activation);
 		inven_item_optimize(Ind, item);
 	} else {
@@ -8659,64 +8689,948 @@ void tome_creation_aux(int Ind, int item) {
 	return;
 }
 
+#ifdef ENABLE_EXCAVATION
+/* === Main code for the demolitionist trait feature of the 'Digging' skill - C. Blue === */
+/* Helper function to create a flag value from an ingredient, for mixture calculations */
+static s16b ingredient2flag(int tval, int sval) {
+	int bit = 0;
+
+	//basically just the various ways of: sulfur+saltpetre+water+oil = acid
+	switch (tval) {
+	case TV_CHEMICAL: bit = sval; break;
+	case TV_POTION:
+		switch (sval) {
+		case SV_POTION_WATER: bit = CI_WA; break;
+		case SV_POTION_SALT_WATER: bit = CI_SW; break;
+		}
+		break;
+	case TV_FLASK:
+		switch (sval) {
+		case SV_FLASK_OIL: bit = CI_LO; break;
+		case SV_FLASK_ACID: bit = CI_AC; break;
+		}
+		break;
+	}
+
+	if (!bit) return 0x000; /* paranoia - not a valid ingredient */
+	return 1 << (bit - 1);
+}
+/* Helper function to combine two ingredients to form a new ingredient (not a mixture). */
+static int ingredients_to_ingredient(int sval1, int tval2, int sval2) {
+	switch (sval1) {
+	case SV_METAL_POWDER:
+ #ifndef NO_RUST_NO_HYDROXIDE
+		if (tval2 == TV_POTION) switch (sval2) {
+			case SV_POTION_WATER:
+			case SV_POTION_SALT_WATER:
+				return CI_RU;
+		} else
+ #else
+		/* Skip some steps very tolerantly.. */
+		if (tval2 == TV_POTION && sval2 == SV_POTION_SALT_WATER) return CI_ME;
+		else if (tval2 == TV_CHEMICAL && sval2 == SV_AMMONIA_SALT) return CI_ME;
+		else
+ #endif
+		if ((tval2 == TV_FLASK && sval2 == SV_FLASK_ACID) ||
+		    (tval2 == TV_CHEMICAL && sval2 == SV_VITRIOL))
+			return CI_MC;
+		return 0;
+
+	/* NO_RUST_NO_HYDROXIDE: Existing instances of these may still be used, they just cannot be generated anymore */
+	case SV_RUST:
+		if (tval2 == TV_POTION && sval2 == SV_POTION_SALT_WATER) return CI_MH;
+		return 0;
+	case SV_METAL_HYDROXIDE:
+		if (tval2 == TV_CHEMICAL) switch (sval2) {
+			case SV_RUST:
+			case SV_AMMONIA_SALT:
+				return CI_ME;
+		}
+		return 0;
+	}
+	return 0;
+}
+/* Helper function to combine a mixture and an ingredient to form a new ingredient (not a mixture). */
+static int mixingred_to_ingredient(int Ind, object_type *o_ptr, int tval, int sval) {
+	s16b ingflag = ingredient2flag(tval, sval);
+	s16b xtra1 = 0x000, xtra2 = 0x000, xtra3 = 0x000;
+
+	/* check whether there's still room to add that ingredient or whether the mixture is already saturated of that particular ingredient */
+	if (!(o_ptr->xtra1 & ingflag))
+		xtra1 |= ingflag;
+	else if (!(o_ptr->xtra2 & ingflag))
+		xtra2 |= ingflag;
+	else if (!(o_ptr->xtra3 & ingflag))
+		xtra3 |= ingflag;
+	else return -1; /* failure - mixture is saturated */
+
+	/* check if the result would be a valid ingredient */
+ #ifndef NO_OIL_ACID
+	if ((xtra1 & (CF_SU | CF_SP | CF_WA | CF_LO)) == (CF_SU | CF_SP | CF_WA | CF_LO)
+ #else
+	if ((xtra1 & (CF_SU | CF_SP | CF_WA)) == (CF_SU | CF_SP | CF_WA)
+ #endif
+	    && !xtra2 && !xtra3) {
+		/* Requires heat to make steam */
+		object_type *ox_ptr = &Players[Ind]->inventory[INVEN_LITE];
+
+		if (!ox_ptr->k_idx || ox_ptr->sval == SV_LITE_FEANORIAN) {
+			msg_print(Ind, "You need to equip a fire-based light source to process this.");
+			return -1;
+		}
+		return CI_AC; /* Success - we created acid */
+	}
+
+	return 0; /* Failure - we created some mixture, but not an ingredient */
+}
+/* Helper function to combine two mixtures to form a new ingredient (not a mixture). */
+static int mixmix_to_ingredient(int Ind, object_type *o_ptr, object_type *o2_ptr) {
+	s16b xtra1 = 0x000, xtra2 = 0x000, xtra3 = 0x000, f;
+	int i, k;
+
+	for (i = 0; i <= 15; i++) {
+		f = 1 << i;
+		k = (o_ptr->xtra1 & f) ? 1 : 0 + (o_ptr->xtra2 & f) ? 1 : 0 + (o_ptr->xtra3 & f) ? 1 : 0;
+		k += (o2_ptr->xtra1 & f) ? 1 : 0 + (o2_ptr->xtra2 & f) ? 1 : 0 + (o2_ptr->xtra3 & f) ? 1 : 0;
+		if (k > 3) return -1; /* Error: Mixture would be oversaturated of this ingredient */
+
+		/* mix.. */
+		switch (k) {
+		case 3: xtra3 |= f;
+		case 2: xtra2 |= f;
+		case 1: xtra1 |= f; break;
+		case 0: break;
+		}
+	}
+
+	/* check if the result would be a valid ingredient */
+ #ifndef NO_OIL_ACID
+	if ((xtra1 & (CF_SU | CF_SP | CF_WA | CF_LO)) == (CF_SU | CF_SP | CF_WA | CF_LO)
+ #else
+	/* Note: This result can never be true, as 3 single-ingredients cannot come as two mixtures.
+	         Instead this is handled properly in mix-ingred function.
+	         Leaving this if-clause here just for visual completeness sake ;). - C. Blue */
+	if ((xtra1 & (CF_SU | CF_SP | CF_WA)) == (CF_SU | CF_SP | CF_WA)
+ #endif
+	    && !xtra2 && !xtra3) {
+		/* Requires heat to make steam */
+		object_type *ox_ptr = &Players[Ind]->inventory[INVEN_LITE];
+
+		if (!ox_ptr->k_idx || ox_ptr->sval == SV_LITE_FEANORIAN) {
+			msg_print(Ind, "You need to equip a fire-based light source to process this.");
+			return -1;
+		}
+		return CI_AC; /* Success - we created acid */
+	}
+
+	return 0; /* Failure - we created some mixture, but not an ingredient */
+}
+/* Helper function to combine two ingredients to form a new mixture (not ingredient). */
+static void inging_to_mixture(int tval, int sval, int tval2, int sval2, object_type *q_ptr) {
+	s16b ingflag = ingredient2flag(tval, sval);
+	s16b ing2flag = ingredient2flag(tval2, sval2);
+
+	q_ptr->xtra1 = ingflag;
+	if (ingflag == ing2flag) q_ptr->xtra2 = ing2flag;
+	else q_ptr->xtra1 |= ing2flag;
+}
+/* Helper function to combine a mixture and an ingredient to form a new mixture (not ingredient). */
+static bool mixingred_to_mixture(object_type *o_ptr, int tval, int sval, object_type *q_ptr) {
+	s16b ingflag = ingredient2flag(tval, sval);
+
+	q_ptr->xtra1 = o_ptr->xtra1;
+	q_ptr->xtra2 = o_ptr->xtra2;
+	q_ptr->xtra3 = o_ptr->xtra3;
+
+	/* check whether there's still room to add that ingredient or whether the mixture is already saturated of that particular ingredient */
+	if (!(o_ptr->xtra1 & ingflag))
+		q_ptr->xtra1 |= ingflag;
+	else if (!(o_ptr->xtra2 & ingflag))
+		q_ptr->xtra2 |= ingflag;
+	else if (!(o_ptr->xtra3 & ingflag))
+		q_ptr->xtra3 |= ingflag;
+	else return FALSE; /* failure - mixture is saturated */
+
+	return TRUE;
+}
+/* Helper function to combine two mixtures to form a new mixture (not ingredient). */
+static bool mixmix_to_mixture(object_type *o_ptr, object_type *o2_ptr, object_type *q_ptr) {
+	s16b xtra1 = 0x000, xtra2 = 0x000, xtra3 = 0x000, f;
+	int i, k;
+
+	for (i = 0; i <= 15; i++) {
+		f = 1 << i;
+		k = (o_ptr->xtra1 & f) ? 1 : 0 + (o_ptr->xtra2 & f) ? 1 : 0 + (o_ptr->xtra3 & f) ? 1 : 0;
+		k += (o2_ptr->xtra1 & f) ? 1 : 0 + (o2_ptr->xtra2 & f) ? 1 : 0 + (o2_ptr->xtra3 & f) ? 1 : 0;
+		if (k > 3) return FALSE; /* Error: Mixture would be oversaturated of this ingredient */
+
+		/* mix.. */
+		switch (k) {
+		case 3: xtra3 |= f;
+		case 2: xtra2 |= f;
+		case 1: xtra1 |= f; break;
+		case 0: break;
+		}
+	}
+
+	/* Translate to target mixture, after all flags were verified to be successfully mixable */
+	q_ptr->xtra1 = xtra1;
+	q_ptr->xtra2 = xtra2;
+	q_ptr->xtra3 = xtra3;
+	return TRUE;
+}
+/* Mix two chemicals to form a new chemical, a mixture, or create a finished product aka a blast charge - C. Blue */
+void mix_chemicals(int Ind, int item) {
+	player_type *p_ptr = Players[Ind];
+	object_type *o_ptr = &p_ptr->inventory[p_ptr->current_activation]; /* Ingredient #2 */
+	object_type *o2_ptr = &p_ptr->inventory[item]; /* Ingredient #1 */
+	object_type forge, *q_ptr = &forge; /* Result (Ingredient, mixture or finished blast charge) */
+	char o_name[ONAME_LEN];
+	int i = 0;
+
+	byte cc = 0, su = 0, sp = 0, as = 0, mp = 0, mh = 0, me = 0, mc = 0, vi = 0, ru = 0; // ..., vitriol, rust (? from rusty mail? / metal + water)
+	byte lo = 0, wa = 0, sw = 0, ac = 0; //lamp oil (flask), water (potion), salt water (potion), acid(?)/vitriol TV_CHEMICAL
+
+	/* Sanity checks */
+	switch (o_ptr->tval) {
+	case TV_CHEMICAL: case TV_POTION: case TV_FLASK: break; /* Note: Actually the first item can only be TV_CHEMICAL because the others cannot be activated. */
+	default: return;
+	}
+	switch (o2_ptr->tval) {
+	case TV_CHEMICAL: case TV_POTION: case TV_FLASK: break;
+	default: return;
+	}
+	WIPE(q_ptr, object_type);
+
+	/* Activating a mixture 'with itself' will try to turn it into a finished blast charge. */
+ #if 0
+	if (item == p_ptr->current_activation) {
+		if (o_ptr->sval != SV_MIXTURE) {
+			msg_print(Ind, "You can only activate mixtures with themselves. It will then get finished into a blast charge, if the mixture is working.");
+			return;
+		}
+ #else
+
+	if (item == p_ptr->current_activation && o_ptr->sval == SV_MIXTURE) {
+ #endif
+
+		/* Count amounts of ingredients in our mixture */
+		cc += ((o_ptr->xtra1 & CF_CC) ? 1 : 0) + ((o_ptr->xtra2 & CF_CC) ? 1 : 0) + ((o_ptr->xtra3 & CF_CC) ? 1 : 0);
+		su += ((o_ptr->xtra1 & CF_SU) ? 1 : 0) + ((o_ptr->xtra2 & CF_SU) ? 1 : 0) + ((o_ptr->xtra3 & CF_SU) ? 1 : 0);
+		sp += ((o_ptr->xtra1 & CF_SP) ? 1 : 0) + ((o_ptr->xtra2 & CF_SP) ? 1 : 0) + ((o_ptr->xtra3 & CF_SP) ? 1 : 0);
+		as += ((o_ptr->xtra1 & CF_AS) ? 1 : 0) + ((o_ptr->xtra2 & CF_AS) ? 1 : 0) + ((o_ptr->xtra3 & CF_AS) ? 1 : 0);
+		mp += ((o_ptr->xtra1 & CF_MP) ? 1 : 0) + ((o_ptr->xtra2 & CF_MP) ? 1 : 0) + ((o_ptr->xtra3 & CF_MP) ? 1 : 0);
+		mh += ((o_ptr->xtra1 & CF_MH) ? 1 : 0) + ((o_ptr->xtra2 & CF_MH) ? 1 : 0) + ((o_ptr->xtra3 & CF_MH) ? 1 : 0);
+		me += ((o_ptr->xtra1 & CF_ME) ? 1 : 0) + ((o_ptr->xtra2 & CF_ME) ? 1 : 0) + ((o_ptr->xtra3 & CF_ME) ? 1 : 0);
+		mc += ((o_ptr->xtra1 & CF_MC) ? 1 : 0) + ((o_ptr->xtra2 & CF_MC) ? 1 : 0) + ((o_ptr->xtra3 & CF_MC) ? 1 : 0);
+
+		vi += ((o_ptr->xtra1 & CF_VI) ? 1 : 0) + ((o_ptr->xtra2 & CF_VI) ? 1 : 0) + ((o_ptr->xtra3 & CF_VI) ? 1 : 0);
+		ru += ((o_ptr->xtra1 & CF_RU) ? 1 : 0) + ((o_ptr->xtra2 & CF_RU) ? 1 : 0) + ((o_ptr->xtra3 & CF_RU) ? 1 : 0);
+
+		lo += ((o_ptr->xtra1 & CF_LO) ? 1 : 0) + ((o_ptr->xtra2 & CF_LO) ? 1 : 0) + ((o_ptr->xtra3 & CF_LO) ? 1 : 0);
+		wa += ((o_ptr->xtra1 & CF_WA) ? 1 : 0) + ((o_ptr->xtra2 & CF_WA) ? 1 : 0) + ((o_ptr->xtra3 & CF_WA) ? 1 : 0);
+		sw += ((o_ptr->xtra1 & CF_SW) ? 1 : 0) + ((o_ptr->xtra2 & CF_SW) ? 1 : 0) + ((o_ptr->xtra3 & CF_SW) ? 1 : 0);
+		ac += ((o_ptr->xtra1 & CF_AC) ? 1 : 0) + ((o_ptr->xtra2 & CF_AC) ? 1 : 0) + ((o_ptr->xtra3 & CF_AC) ? 1 : 0);
+
+		/* Check for valid crafting results! */
+ #ifndef NO_RUST_NO_HYDROXIDE
+		if ((cc == 1 && su == 1 && sp == 2) ||
+		    (as == 3 && lo == 1)) q_ptr->sval = SV_CHARGE_BLAST;
+		if ((cc == 1 && su == 1 && sp == 3) ||
+		    (as == 3 && lo == 1 && mh == 1)) q_ptr->sval = SV_CHARGE_XBLAST;
+		if (cc == 2 && su == 2 && sp == 3 && as == 3) q_ptr->sval = SV_CHARGE_SBLAST;
+		if (cc == 1 && su == 1 && sp == 3 && mc == 1) q_ptr->sval = SV_CHARGE_QUAKE;
+		if (cc == 2 && su == 2 && sp == 3 && mc == 3) q_ptr->sval = SV_CHARGE_DESTRUCTION;
+		if (cc == 2 && su == 1 && sp == 2 && mh == 1) q_ptr->sval = SV_CHARGE_FIRE;
+		if (cc == 2 && su == 2 && sp == 3 && mh == 2) q_ptr->sval = SV_CHARGE_FIRESTORM;
+		if (cc == 3 && su == 2 && sp == 2 && mh == 1) q_ptr->sval = SV_CHARGE_FIREWALL;
+		if (as == 3 && lo == 1 && me == 1) q_ptr->sval = SV_CHARGE_WRECKING;
+		if (as == 3 && lo == 1 && me == 3) q_ptr->sval = SV_CHARGE_CASCADING;
+		if (as == 3 && lo == 1 && me == 2) q_ptr->sval = SV_CHARGE_TACTICAL;
+		if (cc == 1 && su == 1 && sp == 2 && mp == 2) q_ptr->sval = SV_CHARGE_FLASHBOMB;
+		if (cc == 1 && su == 1 && sp == 2 && mh == 1) q_ptr->sval = SV_CHARGE_CONCUSSION;
+		if (cc == 1 && su == 1 && sp == 2 && mh == 2) q_ptr->sval = SV_CHARGE_XCONCUSSION;
+		if (cc == 1 && su == 2 && sp == 2 && mc == 1) q_ptr->sval = SV_CHARGE_UNDERGROUND;
+ #else
+		if ((cc == 1 && su == 1 && sp == 2) ||
+		    (as == 3 && lo == 1)) q_ptr->sval = SV_CHARGE_BLAST;
+		if ((cc == 1 && su == 1 && sp == 3) ||
+		    (as == 3 && lo == 1 && me == 1)) q_ptr->sval = SV_CHARGE_XBLAST;
+		if (cc == 2 && su == 2 && sp == 3 && as == 3) q_ptr->sval = SV_CHARGE_SBLAST;
+		if (cc == 1 && su == 1 && sp == 3 && mc == 1) q_ptr->sval = SV_CHARGE_QUAKE;
+		if (cc == 2 && su == 2 && sp == 3 && mc == 3) q_ptr->sval = SV_CHARGE_DESTRUCTION;
+		if (cc == 2 && su == 1 && sp == 2 && me == 1) q_ptr->sval = SV_CHARGE_FIRE;
+		if (cc == 2 && su == 2 && sp == 3 && me == 2) q_ptr->sval = SV_CHARGE_FIRESTORM;
+		if (cc == 3 && su == 2 && sp == 2 && me == 1) q_ptr->sval = SV_CHARGE_FIREWALL;
+		if (as == 3 && lo == 2 && me == 1) q_ptr->sval = SV_CHARGE_WRECKING;
+		if (as == 3 && lo == 2 && me == 3) q_ptr->sval = SV_CHARGE_CASCADING;
+		if (as == 3 && lo == 2 && me == 2) q_ptr->sval = SV_CHARGE_TACTICAL;
+		if (cc == 1 && su == 1 && sp == 2 && mp == 2) q_ptr->sval = SV_CHARGE_FLASHBOMB;
+		if (cc == 1 && su == 1 && sp == 2 && me == 1) q_ptr->sval = SV_CHARGE_CONCUSSION;
+		if (cc == 1 && su == 1 && sp == 2 && me == 2) q_ptr->sval = SV_CHARGE_XCONCUSSION;
+		if (cc == 1 && su == 2 && sp == 2 && mc == 1) q_ptr->sval = SV_CHARGE_UNDERGROUND;
+ #endif
+
+		if (!q_ptr->sval) {
+			msg_print(Ind, "That is not an appropriate mixture for making a blast charge.");
+			return;
+		} else {
+			q_ptr->tval = TV_CHARGE;
+			msg_format(Ind, "You assemble a blast charge..");
+		}
+	} else {
+		/* First, check special case if we just want to combine an ingredient with it self to start creating a mixture.. */
+		if (item == p_ptr->current_activation)
+			i = mixingred_to_ingredient(Ind, o2_ptr, o_ptr->tval, o_ptr->sval);
+
+		/* Now let's handle the combinations that actually create a new ingredient */
+
+		/* Check for ingredients created from just two ingredients */
+		else if (o_ptr->sval != SV_MIXTURE && !(o2_ptr->tval == TV_CHEMICAL && o2_ptr->sval == SV_MIXTURE)) {
+			i = ingredients_to_ingredient(o_ptr->sval, o2_ptr->tval, o2_ptr->sval);
+			/* Try swapping the two ingredients (only if both are chemicals. (Otherwise obsolete as the non-chemical cannot be activated anyway.) */
+			if (!i && o2_ptr->tval == TV_CHEMICAL) i = ingredients_to_ingredient(o2_ptr->sval, o_ptr->tval, o_ptr->sval);
+		}
+		/* Next, create ingredients from mixture + ingredient */
+		else if (o_ptr->sval != SV_MIXTURE || o2_ptr->tval != TV_CHEMICAL || o2_ptr->sval != SV_MIXTURE) {
+			if (o_ptr->sval == SV_MIXTURE) i = mixingred_to_ingredient(Ind, o_ptr, o2_ptr->tval, o2_ptr->sval);
+			else i = mixingred_to_ingredient(Ind, o2_ptr, o_ptr->tval, o_ptr->sval);
+			/* Catch specialty: Ingredients were correct but we were just missing a tool/circumstances: */
+			if (i == -1) return; //keep everything for next attempt!
+		}
+		/* Last, create ingredient from mixture + mixture */
+		else i = mixmix_to_ingredient(Ind, o_ptr, o2_ptr);
+
+		/* catch failure because of already saturated mixture - meaning that these two items just cannot be combined, no matter what */
+		if (i == -1) {
+			/* When we reach maximum amount of a specific ingredient that we can put into mixtures in general.. (atm 3) */
+			msg_print(Ind, "The mixture is already saturated of that particular ingredient.");
+			return;
+		}
+
+		/* Check for success in creating a new ingredient */
+		if (i) {
+			/* Translate ingredient-index back to tval,sval */
+			if (i >= CI_CC && i <= CI_AC) {
+				q_ptr->tval = TV_CHEMICAL;
+				q_ptr->sval = i;
+			} else switch (i) {
+			case CI_LO:
+				q_ptr->tval = TV_FLASK;
+				q_ptr->sval = SV_FLASK_OIL;
+				break;
+			case CI_AC:
+				q_ptr->tval = TV_FLASK;
+				q_ptr->sval = SV_FLASK_ACID;
+				break;
+			case CI_WA:
+				q_ptr->tval = TV_POTION;
+				q_ptr->sval = SV_POTION_WATER;
+				break;
+			case CI_SW:
+				q_ptr->tval = TV_POTION;
+				q_ptr->sval = SV_POTION_SALT_WATER;
+				break;
+			}
+			msg_print(Ind, "You create a new ingredient..");
+
+		/* No success creating an ingredient -
+		   so we just create a mixture instead, if the particular ingredients are not already overflowing (aka reaching amount cap per mixture).. */
+		} else {
+			/* Create mixture from mixture+mixture or ingredient+mixture */
+
+			/* First, check if we want to create a most basic mixture from just two ingredients */
+			if (o_ptr->sval != SV_MIXTURE && !(o2_ptr->tval == TV_CHEMICAL && o2_ptr->sval == SV_MIXTURE)) {
+				inging_to_mixture(o_ptr->tval, o_ptr->sval, o2_ptr->tval, o2_ptr->sval, q_ptr);
+				i = TRUE;
+			/* next, check for ingredient + mixture */
+			} else if (o_ptr->sval != SV_MIXTURE || o2_ptr->tval != TV_CHEMICAL || o2_ptr->sval != SV_MIXTURE) {
+				if (o_ptr->sval == SV_MIXTURE) i = mixingred_to_mixture(o_ptr, o2_ptr->tval, o2_ptr->sval, q_ptr);
+				else i = mixingred_to_mixture(o2_ptr, o_ptr->tval, o_ptr->sval, q_ptr);
+			}
+			/* finally do mixture + mixture */
+			else i = mixmix_to_mixture(o_ptr, o2_ptr, q_ptr);
+
+			/* catch failure because of already saturated mixture - meaning that these two items just cannot be combined, no matter what */
+			if (!i) {
+				/* When we reach maximum amount of a specific ingredient that we can put into mixtures in general.. (atm 3) */
+				msg_print(Ind, "The mixture is already saturated of that particular ingredient.");
+				return;
+			}
+
+			q_ptr->tval = TV_CHEMICAL;
+			q_ptr->sval = SV_MIXTURE;
+			msg_print(Ind, "You create a mixture from the ingredients..");
+		}
+	}
+
+	/* Result: Either a new ingredient, a mixture or a finished blast charge. */
+	q_ptr->k_idx = lookup_kind(q_ptr->tval, q_ptr->sval); // (using invcopy() would wipe the object)
+	q_ptr->weight = k_info[q_ptr->k_idx].weight;
+	//object_desc(Ind, o_name, q_ptr, FALSE, 256);
+
+	/* Recall original parameters */
+	q_ptr->owner = o_ptr->owner;
+	q_ptr->mode = o_ptr->mode;
+	q_ptr->pval = k_info[q_ptr->k_idx].pval;
+	q_ptr->level = 0;//k_info[q_ptr->k_idx].level;
+	q_ptr->discount = 0;
+	q_ptr->number = 1; //hmm, should it be possible to combine whole stacks instead of just 1 piece each?
+	q_ptr->note = 0;
+	q_ptr->iron_trade = o_ptr->iron_trade;
+	q_ptr->iron_turn = o_ptr->iron_turn;
+
+ #ifdef USE_SOUND_2010
+	if (q_ptr->tval == TV_CHARGE)
+		sound(Ind, "item_rune", NULL, SFX_TYPE_COMMAND, FALSE);
+	else
+		sound(Ind, "snowball", NULL, SFX_TYPE_COMMAND, FALSE); //uhhh - todo: get some alchemyic sfx..
+ #endif
+
+	/* Erase the ingredients in the pack */
+	if (q_ptr->tval == TV_CHARGE) {
+		/* Used up 1 mixture */
+		inven_item_increase(Ind, p_ptr->current_activation, -1);
+		//inven_item_describe(Ind, p_ptr->current_activation);
+		inven_item_optimize(Ind, p_ptr->current_activation);
+	} else if (p_ptr->current_activation == item) {
+		/* Used up 2 items from the same slot */
+		inven_item_increase(Ind, p_ptr->current_activation, -2);
+		//inven_item_describe(Ind, p_ptr->current_activation);
+		inven_item_optimize(Ind, p_ptr->current_activation);
+	} else {
+		/* Used up 2 items from different slots */
+		inven_item_increase(Ind, p_ptr->current_activation, -1);
+		//inven_item_describe(Ind, p_ptr->current_activation);
+		inven_item_increase(Ind, item, -1);
+		//inven_item_describe(Ind, item);
+		if (p_ptr->current_activation > item) { //higher value (lower in inventory) first; to preserve indices
+			inven_item_optimize(Ind, p_ptr->current_activation);
+			inven_item_optimize(Ind, item);
+		} else {
+			inven_item_optimize(Ind, item);
+			inven_item_optimize(Ind, p_ptr->current_activation);
+		}
+	}
+	/* Give us the result */
+	object_desc(Ind, o_name, q_ptr, TRUE, 3);
+	if (q_ptr->tval == TV_CHARGE) s_printf("CHARGE: %s (%d, %d) created %s.\n", p_ptr->name, p_ptr->lev, get_skill(p_ptr, SKILL_DIG), o_name);
+	i = inven_carry(Ind, q_ptr);
+	if (i != -1) msg_format(Ind, "You have %s (%c).", o_name, index_to_label(i));
+}
+/* Determine the sensorial properties of a chemical mixture */
+void mixture_flavour(object_type *o_ptr, char *flavour) {
+	int aspects = 0, primary = 0, secondary = 0;
+	byte cc = 0, su = 0, sp = 0, as = 0, mp = 0, mh = 0, me = 0, mc = 0, vi = 0, ru = 0; // ..., vitriol, rust (? from rusty mail? / metal + water)
+	byte lo = 0, wa = 0, sw = 0, ac = 0; //lamp oil (flask), water (potion), salt water (potion), acid(?)/vitriol TV_CHEMICAL
+
+	if (o_ptr->sval != SV_MIXTURE) return;
+
+	/* Count amounts of ingredients in our mixture */
+	cc += ((o_ptr->xtra1 & CF_CC) ? 1 : 0) + ((o_ptr->xtra2 & CF_CC) ? 1 : 0) + ((o_ptr->xtra3 & CF_CC) ? 1 : 0); //black amorphous
+	su += ((o_ptr->xtra1 & CF_SU) ? 1 : 0) + ((o_ptr->xtra2 & CF_SU) ? 1 : 0) + ((o_ptr->xtra3 & CF_SU) ? 1 : 0); //stinking (yellow)
+	sp += ((o_ptr->xtra1 & CF_SP) ? 1 : 0) + ((o_ptr->xtra2 & CF_SP) ? 1 : 0) + ((o_ptr->xtra3 & CF_SP) ? 1 : 0); //white crystalline
+	as += ((o_ptr->xtra1 & CF_AS) ? 1 : 0) + ((o_ptr->xtra2 & CF_AS) ? 1 : 0) + ((o_ptr->xtra3 & CF_AS) ? 1 : 0); //pungent smell (white/transparent)
+	mp += ((o_ptr->xtra1 & CF_MP) ? 1 : 0) + ((o_ptr->xtra2 & CF_MP) ? 1 : 0) + ((o_ptr->xtra3 & CF_MP) ? 1 : 0); //glittering
+	mh += ((o_ptr->xtra1 & CF_MH) ? 1 : 0) + ((o_ptr->xtra2 & CF_MH) ? 1 : 0) + ((o_ptr->xtra3 & CF_MH) ? 1 : 0); //white (ferrum-ii) solid
+	me += ((o_ptr->xtra1 & CF_ME) ? 1 : 0) + ((o_ptr->xtra2 & CF_ME) ? 1 : 0) + ((o_ptr->xtra3 & CF_ME) ? 1 : 0); //yellow amorphous solid
+	mc += ((o_ptr->xtra1 & CF_MC) ? 1 : 0) + ((o_ptr->xtra2 & CF_MC) ? 1 : 0) + ((o_ptr->xtra3 & CF_MC) ? 1 : 0); //yellow crystalline (iron) / colourless/white solid (ammonium)
+
+	vi += ((o_ptr->xtra1 & CF_VI) ? 1 : 0) + ((o_ptr->xtra2 & CF_VI) ? 1 : 0) + ((o_ptr->xtra3 & CF_VI) ? 1 : 0); //green (almost turquoise) for iron
+	ru += ((o_ptr->xtra1 & CF_RU) ? 1 : 0) + ((o_ptr->xtra2 & CF_RU) ? 1 : 0) + ((o_ptr->xtra3 & CF_RU) ? 1 : 0); //redbrown (umber in k_info)
+
+	lo += ((o_ptr->xtra1 & CF_LO) ? 1 : 0) + ((o_ptr->xtra2 & CF_LO) ? 1 : 0) + ((o_ptr->xtra3 & CF_LO) ? 1 : 0); //brown (flask is yellow..)
+	wa += ((o_ptr->xtra1 & CF_WA) ? 1 : 0) + ((o_ptr->xtra2 & CF_WA) ? 1 : 0) + ((o_ptr->xtra3 & CF_WA) ? 1 : 0); //clear
+	sw += ((o_ptr->xtra1 & CF_SW) ? 1 : 0) + ((o_ptr->xtra2 & CF_SW) ? 1 : 0) + ((o_ptr->xtra3 & CF_SW) ? 1 : 0); //light grey transparent
+	ac += ((o_ptr->xtra1 & CF_AC) ? 1 : 0) + ((o_ptr->xtra2 & CF_AC) ? 1 : 0) + ((o_ptr->xtra3 & CF_AC) ? 1 : 0); //grey (just because it's the game's element colour..)
+
+	/* Count differing sensorial aspects */
+	aspects += (cc ? 1 : 0) + ((me || mc) ? 1 : 0) + ((sp || mh) ? 1 : 0) + ((su || as) ? 1 : 0) + (mp ? 1 : 0) + (vi ? 1 : 0) +
+	    ((ru || lo) ? 1 : 0) + ((wa || sw) ? 1 : 0) + (ac ? 1 : 0);
+
+	/* too much crap in it? becomes kinda indistinct */
+	if (aspects >= 5) {
+		strcpy(flavour, "bubbling");
+		return;
+	}
+
+	/* give characteritic sensorial properties, starting from most dominant to lesser dominant traits, first determine colouring, second smell/texture */
+
+	/* colouring */
+	if (ru || lo) primary = 1;
+	else if (cc) primary = 2;
+	else if (me || mc) primary = 3;
+	else if (vi) primary = 4;
+	else if (ac) primary = 5;
+	/* this one can also serve as secondary factor if there's no smell which is more important (allowing 3 adjectives would be tooo much clutter) */
+	else if (mp) primary = 6;
+	else if (sp || mh) primary = 7;
+	else if (wa || sw) primary = 8;
+	// secondary colouring aspects, these are mainly used to determine smell
+	else if (su) primary = 9;
+	else /* as */ primary = 10;
+
+	/* smell/texture */
+	if (su || as) secondary = 1;
+	else if (mp) secondary = 2;
+
+	/* Form complete flavour */
+	switch (secondary) {
+	case 1: strcpy(flavour, "Pungent "); break;
+	case 2: if (primary != 6) strcpy(flavour, "Glittering "); break;
+	default: strcpy(flavour, ""); break;
+	}
+	switch (primary) {
+	case 1: strcat(flavour, "Brown"); break;
+	case 2: strcat(flavour, "Dark"); break;
+	case 3: strcat(flavour, "Yellow"); break;
+	case 4: strcat(flavour, "Green"); break;
+	case 5: strcat(flavour, "Grey"); break;
+	case 6: strcat(flavour, "Glittering"); break;
+	case 7: strcat(flavour, "White"); break;
+	case 8: strcat(flavour, "Transparent"); break;
+	case 9: strcat(flavour, "Yellow"); break;
+	case 10: strcat(flavour, "White"); break;
+	default: strcat(flavour, "White"); //paranoia
+	}
+}
+/* Grind metallic objects to poweder for use as ingredient */
+void grind_chemicals(int Ind, int item) {
+	player_type *p_ptr = Players[Ind];
+	object_type *o_ptr = &p_ptr->inventory[item]; /* Metallic object */
+	object_type forge, *q_ptr = &forge; /* Resulting metal powder */
+	char o_name[ONAME_LEN];
+	int i;
+
+	object_desc(Ind, o_name, o_ptr, FALSE, 0);
+	if (check_guard_inscription(o_ptr->note, 'k')) {
+		msg_print(Ind, "The item's inscription prevents grinding it to powder.");
+		return;
+	}
+	if (artifact_p(o_ptr)) {
+		msg_print(Ind, "Artifacts cannot be ground into metal powder.");
+		return;
+	}
+	if (!set_rust_destroy(o_ptr)) {
+		msg_format(Ind, "Your %s will not yield reactive metal powder.", o_name);
+		return;
+	}
+
+	msg_format(Ind, "You grind the metal off of your %s ..", o_name);
+
+ #ifndef NO_RUST_NO_HYDROXIDE
+	invcopy(q_ptr, lookup_kind(TV_CHEMICAL, my_strcasestr(o_name, "rusty") ? SV_RUST : SV_METAL_POWDER));
+ #else
+	invcopy(q_ptr, lookup_kind(TV_CHEMICAL, SV_METAL_POWDER));
+ #endif
+	/* Recall original parameters */
+	q_ptr->owner = o_ptr->owner;
+	q_ptr->mode = o_ptr->mode;
+	q_ptr->level = 0;//k_info[q_ptr->k_idx].level;
+	q_ptr->discount = 0;
+	q_ptr->number = 1 + 10 - 1000 / (o_ptr->weight + 90);
+	q_ptr->number = (q_ptr->number >> 1) + 1; //experimental: reduce a bit further..
+	q_ptr->weight = k_info[q_ptr->k_idx].weight;
+	q_ptr->note = 0;
+	q_ptr->iron_trade = o_ptr->iron_trade;
+	q_ptr->iron_turn = o_ptr->iron_turn;
+
+ #ifdef USE_SOUND_2010
+	sound_item(Ind, o_ptr->tval, o_ptr->sval, "drop_");
+ #endif
+
+	/* Erase the ingredients in the pack */
+	inven_item_increase(Ind, item, -1);
+	inven_item_describe(Ind, item);
+	inven_item_optimize(Ind, item);
+
+	/* Give us the result */
+	i = inven_carry(Ind, q_ptr);
+	if (i != -1) {
+		object_desc(Ind, o_name, &forge, TRUE, 3);
+		msg_format(Ind, "You have %s (%c).", o_name, index_to_label(i));
+	}
+}
+/* Set a charge live */
+void arm_charge(int Ind, int item, int dir) {
+	player_type *p_ptr = Players[Ind];
+	object_type *o_ptr = &p_ptr->inventory[item];
+	char o_name[ONAME_LEN], *c;
+	cave_type *c_ptr;
+	cave_type **zcave;
+	struct c_special *cs_ptr;
+	int py = p_ptr->py, px = p_ptr->px;
+	s16b o2_idx;
+	object_type *o2_ptr;
+	worldpos *wpos = &p_ptr->wpos;
+
+
+	/* Check some conditions */
+
+	zcave = getcave(&p_ptr->wpos);
+	c_ptr = &zcave[py][px];
+
+	if (p_ptr->blind) {
+		msg_print(Ind, "You can't see anything.");
+		return;
+	}
+	if (no_lite(Ind)) {
+		msg_print(Ind, "You don't dare to set a charge in the darkness.");
+		return;
+	}
+	if (p_ptr->confused) {
+		msg_print(Ind, "You are too confused!");
+		return;
+	}
+
+	if (istownarea(wpos, MAX_TOWNAREA)) {
+		msg_print(Ind, "You may not place a charge in towns.");
+		return;
+	}
+	if ((f_info[c_ptr->feat].flags1 & FF1_PROTECTED) ||
+	    (c_ptr->info & CAVE_PROT)) {
+		msg_print(Ind, "You cannot place charges on this special floor.");
+		return;
+	}
+	/* Only set traps on floor grids */
+	if (!cave_clean_bold(zcave, py, px) || c_ptr->special ||
+	    //!cave_set_feat_live_ok(&p_ptr->wpos, py, px, FEAT_MON_TRAP) ||
+	    c_ptr->feat == FEAT_DEEP_LAVA || c_ptr->feat == FEAT_DEEP_WATER) {
+		msg_print(Ind, "You cannot place a charge here.");
+		return;
+	}
+
+	/* Try to place it */
+
+	un_afk_idle(Ind);
+
+	/* Take half a turn maybe? No idea */
+	p_ptr->energy -= level_speed(&p_ptr->wpos) / 2;
+	if (interfere(Ind, 50 - get_skill_scale(p_ptr, SKILL_CALMNESS, 35))) return;
+
+	/* Hack: We just abuse monster traps for charges too.. */
+	if (!(cs_ptr = AddCS(c_ptr, CS_MON_TRAP))) return;
+
+	/* Create a charge-item to be dropped on/into the floor */
+
+	o2_idx = o_pop();
+	if (!o2_idx) {
+		//shouldn't happen
+		msg_print(Ind, "It's not possible to arm charges right now.");
+		return;
+	}
+
+	object_desc(Ind, o_name, o_ptr, FALSE, 256);
+	msg_format(Ind, "You place the %s and arm it..", o_name);
+ #ifdef USE_SOUND_2010
+	sound_near_site(p_ptr->py, p_ptr->px, wpos, 0, "item_rune", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+
+	o2_ptr = &o_list[o2_idx];
+	object_copy(o2_ptr, o_ptr);
+
+	o2_ptr->embed = 1;
+	o2_ptr->iy = py;
+	o2_ptr->ix = px;
+	wpcopy(&o2_ptr->wpos, wpos);
+
+	/* Forget monster */
+	o2_ptr->held_m_idx = 0;
+	/* No stack */
+	o2_ptr->next_o_idx = 0;
+
+	/* don't remove it quickly in towns */
+	o2_ptr->marked2 = ITEM_REMOVAL_MONTRAP;
+
+	/* Set 'dir' if any (for fire-wall charge) */
+	o2_ptr->xtra9 = dir;
+
+	/* Place monster-trap-/rune-like glyph on the floor */
+	o2_ptr->timeout = o_ptr->pval; //light the fuse
+
+	/* Hack: Allow setting custom fuse length via '!Fxx' inscription! */
+	if (o2_ptr->note && (c = strchr(quark_str(o2_ptr->note), '!')) && (c[1] == 'F')) {
+		int fuse = atoi(c + 2);
+
+		/* Limits: Fuse duration must be between 1s and 15s */
+		if (fuse > 15) fuse = 15;
+		if (fuse < 1) fuse = 1;
+
+		o2_ptr->timeout = fuse;
+	}
+
+	/* Finally, do place the standalone charge-item into the monster trap feat */
+
+	/* Link charge to monster trap glyph */
+	cs_ptr->sc.montrap.trap_kit = o2_idx;
+	/* Set difficulty to impossible? */
+	cs_ptr->sc.montrap.difficulty = 100 + k_info[o2_ptr->k_idx].level;
+	/* Preserve former feat */
+	cs_ptr->sc.montrap.feat = c_ptr->feat;
+	/* Note: Glyph colour is taken from the charge type in k_info. */
+
+	/* Actually set the 'trap' */
+	cave_set_feat_live(&p_ptr->wpos, py, px, FEAT_MON_TRAP);
+
+ #ifdef TEST_SERVER
+	return;
+ #endif
+	/* Erase the ingredients in the pack */
+	inven_item_increase(Ind, item, -1);
+	inven_item_describe(Ind, item);
+	inven_item_optimize(Ind, item);
+}
+/* A charge (planted into the floor) explodes */
+void detonate_charge(object_type *o_ptr) {
+	struct worldpos *wpos = &o_ptr->wpos;
+	int i, who = PROJECTOR_MON_TRAP, x = o_ptr->ix, y = o_ptr->iy;
+	int flg = (PROJECT_NORF | PROJECT_JUMP | PROJECT_ITEM | PROJECT_KILL | PROJECT_NODO
+	    | PROJECT_GRID | PROJECT_SELF | PROJECT_LODF);//check the flags for correctness
+	struct c_special *cs_ptr;
+	cave_type *c_ptr, **zcave;
+
+	int x2, y2, dir;
+
+	bool rand_old = Rand_quick;
+	u32b old_seed = Rand_value;
+	struct dun_level *l_ptr = getfloor(wpos);
+
+
+	if (!(zcave = getcave(wpos))) return;
+	c_ptr = &zcave[y][x];
+	/* without this, when disarming it we'd generate a (nothing) */
+	if ((cs_ptr = GetCS(c_ptr, CS_MON_TRAP))) {
+		i = cs_ptr->sc.montrap.feat;
+		cs_erase(c_ptr, cs_ptr);
+		cave_set_feat_live(wpos, y, x, i);
+	}
+
+	/* Find owner of the charge */
+	for (i = 1; i <= NumPlayers; i++) {
+		if (Players[i]->id != o_ptr->owner) continue;
+		who = -i;
+		break;
+	}
+
+	//aggravate_monsters_floorpos(wpos, y, x);
+
+	switch (o_ptr->sval) {
+	case SV_CHARGE_BLAST:
+ #ifdef USE_SOUND_2010
+		sound_near_site(y, x, wpos, 0, "detonation", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+		(void) project(who, 2, wpos, y, x, damroll(20, 15), GF_DETONATION, flg, "");
+		break;
+	case SV_CHARGE_XBLAST: //X2Megablast
+ #ifdef USE_SOUND_2010
+		sound_near_site(y, x, wpos, 0, "detonation", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+		(void) project(who, 4, wpos, y, x, damroll(30, 15), GF_DETONATION, flg, "");
+		break;
+	case SV_CHARGE_SBLAST:
+ #ifdef USE_SOUND_2010
+		sound_near_site(y, x, wpos, 0, "detonation", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+		dir = o_ptr->xtra9;
+		for (i = 0; i < 6; i++) {
+			x2 = x + ddx[dir] * i;
+			y2 = y + ddy[dir] * i;
+			if (!cave_los_wall(zcave, y2, x2)) break; /* Stop at permanent walls */
+			(void) project(who, 0, wpos, y2, x2, damroll(20, 15), GF_DETONATION, flg, "");
+		}
+		break;
+	case SV_CHARGE_QUAKE:
+		earthquake(wpos, y, x, 10);
+		break;
+	case SV_CHARGE_DESTRUCTION:
+		destroy_area(wpos, y, x, 15, TRUE, FEAT_FLOOR, 120);
+		break;
+	case SV_CHARGE_FIRE:
+ #ifdef USE_SOUND_2010
+		sound_near_site(y, x, wpos, 0, "cast_ball", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+		(void) project(who, 2, wpos, y, x, damroll(10, 10), GF_FIRE, flg & ~PROJECT_NODF, "");
+		break;
+	case SV_CHARGE_FIRESTORM: //evaporate the seas
+ #ifdef USE_SOUND_2010
+		sound_near_site(y, x, wpos, 0, "cast_cloud", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+		//flg = PROJECT_NORF | PROJECT_STOP | PROJECT_GRID | PROJECT_ITEM | PROJECT_KILL | PROJECT_STAY | PROJECT_NODF | PROJECT_NODO | PROJECT_SELF;
+		flg |= PROJECT_STAY;
+		//project_time_effect = 0;
+		project_time = 10;
+		project_interval = 9;
+		(void) project(who, 4, wpos, y, x, 25, GF_FIRE, flg, "");
+		break;
+	case SV_CHARGE_FIREWALL:
+ #ifdef USE_SOUND_2010
+		//sound_near_site(y, x, wpos, 0, "cast_cloud", NULL, SFX_TYPE_MISC, FALSE);
+		sound_near_site(y, x, wpos, 0, "cast_ball", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+		dir = o_ptr->xtra9;
+		for (i = 0; i < MAX_RANGE / 2; i++) {
+			x2 = x + ddx[dir] * i;
+			y2 = y + ddy[dir] * i;
+			if (!cave_los_wall(zcave, y2, x2)) break; /* Stop at permanent walls */
+			(void) project(who, 0, wpos, y2, x2, damroll(20, 15), GF_FIRE, flg, "");
+		}
+		break;
+	case SV_CHARGE_WRECKING:
+		//creates rubble, doesn't remove walls
+ #ifdef USE_SOUND_2010
+		sound_near_site(y, x, wpos, 0, "detonation", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+		for (x2 = x - 1; x2 <= x + 1; x2++) {
+			for (y2 = y - 1; y2 <= y + 1; y2++) {
+				if (magik(40)) continue; /* Scattered rubble */
+				c_ptr = &zcave[y2][x2];
+				if ((f_info[c_ptr->feat].flags1 & FF1_PROTECTED) || (c_ptr->info & CAVE_PROT)) continue;
+				if (!cave_clean_bold(zcave, y2, x2) || c_ptr->special
+				    || c_ptr->feat == FEAT_DEEP_LAVA || c_ptr->feat == FEAT_DEEP_WATER)
+					continue;
+				cave_set_feat_live(wpos, y2, x2, FEAT_RUBBLE);
+				c_ptr->info |= CAVE_NOYIELD;
+			}
+		}
+		break;
+	case SV_CHARGE_CASCADING:
+ #ifdef USE_SOUND_2010
+		sound_near_site(y, x, wpos, 0, "stone_wall", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+		dir = o_ptr->xtra9;
+		for (i = 0; i < MAX_RANGE / 2; i++) {
+			x2 = x + ddx[dir] * i;
+			y2 = y + ddy[dir] * i;
+			if (!cave_los_wall(zcave, y2, x2)) break; /* Stop at permanent walls */
+			(void) project(who, 0, wpos, y2, x2, damroll(20, 15), GF_STONE_WALL, flg, "");
+		}
+		break;
+	case SV_CHARGE_TACTICAL:
+ #ifdef USE_SOUND_2010
+		sound_near_site(y, x, wpos, 0, "stone_wall", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+		project(who, 1, wpos, y, x, 1, GF_STONE_WALL, flg | PROJECT_GRID | PROJECT_NODF, "trap of walls");
+		break;
+	case SV_CHARGE_FLASHBOMB:
+ #ifdef USE_SOUND_2010
+		sound_near_site(y, x, wpos, 0, "flash_bomb", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+		(void) project(who, 6, wpos, y, x, damroll(6, 3), GF_BLIND, flg, "");
+		break;
+	case SV_CHARGE_CONCUSSION:
+ #ifdef USE_SOUND_2010
+		sound_near_site(y, x, wpos, 0, "flash_bomb", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+		(void) project(who, 3, wpos, y, x, damroll(9,3), GF_STUN, flg, "");
+		break;
+	case SV_CHARGE_XCONCUSSION:
+ #ifdef USE_SOUND_2010
+		sound_near_site(y, x, wpos, 0, "flash_bomb", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+		(void) project(who, 5, wpos, y, x, damroll(18, 3), GF_STUN, flg, "");
+		break;
+	case SV_CHARGE_UNDERGROUND:
+		//create lava/water, deep even
+ #ifdef USE_SOUND_2010
+		sound_near_site(y, x, wpos, 0, "detonation", NULL, SFX_TYPE_MISC, FALSE);
+ #endif
+		if (!l_ptr) { //paranoia
+			i = rand_int(2) ? FEAT_DEEP_LAVA : FEAT_DEEP_WATER;
+		} else {
+			/* Fix the RNG depending on wpos and some sort of floor sector even */
+			Rand_quick = TRUE;
+			Rand_value = l_ptr->id + (x / 30) * 31 + (y / 30) * 5003;
+			i = rand_int(2) ? FEAT_DEEP_LAVA : FEAT_DEEP_WATER;
+			/* Restore the RNG */
+			Rand_quick = rand_old;
+			Rand_value = old_seed;
+		}
+		for (x2 = x - 1; x2 <= x + 1; x2++) {
+			for (y2 = y - 1; y2 <= y + 1; y2++) {
+				if (!rand_int(2)) continue; /* Somewhat irregular course, a 'vein' */
+				c_ptr = &zcave[y2][x2];
+				if ((f_info[c_ptr->feat].flags1 & FF1_PROTECTED) || (c_ptr->info & CAVE_PROT)) continue;
+				if (!cave_clean_bold(zcave, y2, x2) || c_ptr->special
+				    || c_ptr->feat == FEAT_DEEP_LAVA || c_ptr->feat == FEAT_DEEP_WATER)
+					continue;
+				cave_set_feat_live(wpos, y2, x2, i);
+			}
+		}
+		break;
+	}
+}
+#endif
+
+/* Returns FALSE if we notice any effect, TRUE if we don't (for UNMAGIC). */
 bool do_mstopcharm(int Ind) {
 	player_type *p_ptr = Players[Ind];
 	monster_type *m_ptr;
 	int m;
-	bool unknown = TRUE;
+	bool notice = TRUE;
 
 	if (p_ptr->mcharming == 0) return FALSE; /* optimization */
-
 	p_ptr->mcharming = 0;
 
 	for (m = m_top - 1; m >= 0; m--) {
 		m_ptr = &m_list[m_fast[m]];
-		//r_ptr = race_inf(m_ptr);
-		if (m_ptr->charmedignore && m_ptr->charmedignore == Ind)
-			unknown = m_ptr->charmedignore = 0;
+		if (m_ptr->charmedignore != p_ptr->id) continue;
+		m_ptr->charmedignore = 0;
+		notice = TRUE;
 	}
-	return unknown;
+	if (notice) msg_print(Ind, "Your charm spell breaks!");
+	return notice;
 }
 
-bool test_charmedignore(int Ind, int Ind_charmer, monster_race *r_ptr) {
-	player_type *q_ptr = Players[Ind_charmer];
-	int chance = 1, cost = 1;
+/* Returns TRUE if the monster is still under charm for this moment (eg attack attempt),
+   FALSE if the charm effect wavers for a moment, allowing the monster to attack in between,
+   while hopefully being back in trance the next time we check.
+   Each attempt will cost the original charmer mana, and he also has the highest chance of succeeding this roll,
+   so party members are slightly more prone to getting attacked.. */
+bool test_charmedignore(int Ind, s32b charmer_id, monster_type *m_ptr, monster_race *r_ptr) {
+	int Ind_charmer = find_player(charmer_id);
+	player_type *q_ptr;
+	int diff = 1;
+
+	if (!Ind_charmer) {
+		/* Somehow the charmer has vanished - break the spell! */
+		m_ptr->charmedignore = 0;
+		return FALSE;
+	}
+
+	q_ptr = Players[Ind_charmer];
 
 	/* non team-mates are not affected (and would cost extra mana) */
 	if (Ind != Ind_charmer &&
 	    (!player_in_party(q_ptr->party, Ind)))
 		return FALSE;
 
-	/* some monsters show resistance spikes */
-	if ((r_ptr->flags2 & RF2_SMART) ||
-	    (r_ptr->flags3 & RF3_NO_CONF) ||
-	    (r_ptr->flags1 & RF1_UNIQUE) ||
-	    (r_ptr->flags2 & RF2_POWERFUL)) {
-		chance++;
-		cost++;
-	}
-
-	/* especially costly? */
-	if (r_ptr->level > (q_ptr->lev * 7) / 5)
-		cost++;
+	/* some monsters cost more to maintain */
+	if (r_ptr->flags2 & RF2_SMART) diff++;
+	if (r_ptr->flags3 & RF3_NO_CONF) diff++;
+	if (r_ptr->flags1 & RF1_UNIQUE) diff++;
+	if (r_ptr->flags2 & RF2_POWERFUL) diff++;
+	if (r_ptr->level > (q_ptr->lev * 7) / 5) diff += (r_ptr->level - q_ptr->lev) / 20;
 
 	/* spell continuously burns mana! */
-	if (turn % (cfg.fps / 10) == 0) {
+	//if (turn % (cfg.fps / 10) == 0) {
+	if (!rand_int(6)) {
+		q_ptr->csp -= diff;
+		if (q_ptr->csp < 0) q_ptr->csp = 0;
 		if (q_ptr->csp < 1) {
 			do_mstopcharm(Ind_charmer);
 			return FALSE;
 		}
-		q_ptr->csp -= 1;
 		q_ptr->redraw |= PR_MANA;
 	}
 
-	/* the charm-caster himself is pretty safe */
-	if (Ind == Ind_charmer && magik(100 - chance))
-		return TRUE;
-	/* in same party?= slightly reduced effect >:) */
-	if (magik(99 - 2 * chance))
-		return TRUE;
-
+	if (Ind == Ind_charmer) {
+		/* the charm-caster himself is pretty safe */
+		if (magik(100 - diff)) return TRUE;
+	} else {
+		/* in same party? slightly reduced effect >:) */
+		if (magik(100 - 2 * diff)) return TRUE;
+	}
+	/* Oops, monster's own will flares up for a moment! */
 	return FALSE;
 }
 

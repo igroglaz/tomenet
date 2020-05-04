@@ -269,7 +269,7 @@ static void prt_sanity(int Ind) {
 		strcpy(buf, "   Insane");
 	} else if (ratio < 50) {
 		attr = TERM_ORANGE;
-		strcpy(buf, "   Crazy");
+		strcpy(buf, "    Crazy");
 	} else if (ratio < 75) {
 		attr = TERM_YELLOW;
 		strcpy(buf, "    Weird");
@@ -434,6 +434,11 @@ static void prt_state(int Ind) {
 static void prt_speed(int Ind) {
 	player_type *p_ptr = Players[Ind];
 	int i = p_ptr->pspeed;
+
+	/* Mark 'temporary' speed effects */
+	if (!is_older_than(&p_ptr->version, 4, 7, 3, 0, 0, 0) &&
+	    p_ptr->fast && i >= 110)
+		i |= 0x100;
 
 	Send_speed(Ind, i - 110);
 }
@@ -1718,8 +1723,8 @@ void calc_hitpoints(int Ind) {
 
 	/* Factor in the hero / superhero settings.
 	   Specialty: It's applied AFTER mimic form HP influence. */
-	if (p_ptr->hero) mhp += 10;
 	if (p_ptr->shero) mhp += 20;
+	if (p_ptr->hero) mhp += 10;
 
 #if 0 /* p_ptr->to_hp is unused atm! */
 	/* Fixed Hit Point Bonus */
@@ -1797,7 +1802,7 @@ static void calc_torch(int Ind) {
 			p_ptr->cur_lite += 2;
 
 		/* Feanorian lanterns provide permanent, bright, lite */
-		if (o_ptr->sval == SV_LITE_FEANOR)
+		if (o_ptr->sval == SV_LITE_FEANORIAN)
 			p_ptr->cur_lite += 3;
 
 		/* Artifact Lites provide permanent, bright, lite */
@@ -1951,6 +1956,7 @@ static void calc_body_bonus(int Ind, boni_col * csheet_boni) {
 	if (r_ptr->weight >= 100000 && i < 3) i++;
 	/* <race> */
 	if (strstr(mname, "bear") && (r_ptr->flags3 & RF3_ANIMAL)) i++; /* Bears get +1 STR */
+	if (r_ptr->d_char == 'Y' && (r_ptr->flags3 & RF3_ANIMAL)) i++; /* Yeti/Sasquatch get +1 STR */
 	if (r_ptr->flags3 & RF3_TROLL) i += 1;
 	if (r_ptr->flags3 & RF3_GIANT) i += 1;
 	if ((r_ptr->flags3 & RF3_DRAGON) && (strstr(mname, "mature ") ||
@@ -2601,8 +2607,8 @@ void calc_body_spells(int Ind) {
 	p_ptr->innate_spells[1] = r_ptr->flags5 & RF5_PLAYER_SPELLS;
 	p_ptr->innate_spells[2] = r_ptr->flags6 & RF6_PLAYER_SPELLS;
 	p_ptr->innate_spells[3] = r_ptr->flags0 & RF0_PLAYER_SPELLS;
-	if (is_older_than(&p_ptr->version, 4, 7, 2, 0, 0, 1)) Send_spell_info(Ind, 0, 0, 0, "");
-	else Send_powers_info(Ind);
+	if (is_atleast(&p_ptr->version, 4, 7, 3, 0, 0, 0)) Send_powers_info(Ind);
+	else Send_spell_info(Ind, 0, 0, 0, "");
 }
 
 #if 0	// moved to defines.h
@@ -3284,8 +3290,8 @@ void calc_boni(int Ind) {
 		p_ptr->innate_spells[2] = 0x0;
 		p_ptr->innate_spells[3] = 0x0;
 		if (!suppress_boni && logged_in) {
-			if (is_older_than(&p_ptr->version, 4, 7, 2, 0, 0, 1)) Send_spell_info(Ind, 0, 0, 0, "");
-			else Send_powers_info(Ind);
+			if (is_atleast(&p_ptr->version, 4, 7, 3, 0, 0, 0)) Send_powers_info(Ind);
+			else Send_spell_info(Ind, 0, 0, 0, "");
 		}
 
 		/* Start with "normal" speed */
@@ -4092,7 +4098,13 @@ void calc_boni(int Ind) {
 		}
 		if (f3 & TR3_DRAIN_EXP) p_ptr->drain_exp++;
 		if (f5 & (TR5_DRAIN_MANA)) { p_ptr->drain_mana++; csheet_boni[i-INVEN_WIELD].cb[5] |= CB6_SRGMP; }
-		if (f5 & (TR5_DRAIN_HP)) { p_ptr->drain_life++; csheet_boni[i-INVEN_WIELD].cb[5] |= CB6_SRGHP; }
+		if (f5 & (TR5_DRAIN_HP)) {
+			/* Spectral weapons don't hurt true vampires -
+			   hypothetically exploitable if one of two ego powers had non-spectral drain life as well. */
+			if (p_ptr->prace != RACE_VAMPIRE ||
+			    (o_ptr->name2 != EGO_SPECTRAL && o_ptr->name2b != EGO_SPECTRAL))
+				{ p_ptr->drain_life++; csheet_boni[i-INVEN_WIELD].cb[5] |= CB6_SRGHP; }
+		}
 		if (f5 & (TR5_INVIS)) {
 			j = (p_ptr->lev > 50 ? 50 : p_ptr->lev) * 4 / 5;
 			/* better than invis from monster form we're using? */
@@ -4174,11 +4186,6 @@ void calc_boni(int Ind) {
 		/* BLESSED items are adverse to Corrupted beings in general? */
 		if (p_ptr->ptrait == TRAIT_CORRUPTED && (f3 & TR3_BLESSED)) p_ptr->no_hp_regen++;
 #endif
-
-		/* then again, spectral weapons don't hurt true vampires */
-		if (p_ptr->prace == RACE_VAMPIRE &&
-		    (o_ptr->name2 == EGO_SPECTRAL || o_ptr->name2b == EGO_SPECTRAL))
-			p_ptr->drain_life--; /* hack: cancel out the life-drain applied by spectral'ity */
 
 		/* Immunity flags */
 		if (f2 & TR2_IM_FIRE) { p_ptr->immune_fire = TRUE; csheet_boni[i-INVEN_WIELD].cb[0] |= CB1_IFIRE; }
@@ -4582,11 +4589,11 @@ void calc_boni(int Ind) {
 	if (p_ptr->fury) {
 		p_ptr->to_h -= 10;
 		p_ptr->dis_to_h -= 10;
-		p_ptr->to_d += 20;
-		p_ptr->dis_to_d += 20;
+		p_ptr->to_d += 10;
+		p_ptr->dis_to_d += 10;
 		p_ptr->pspeed += 5;
-		p_ptr->to_a -= 30;
-		p_ptr->dis_to_a -= 30;
+		p_ptr->to_a -= 20;
+		p_ptr->dis_to_a -= 20;
 	}
 
 	/* Temporary "fast" */
@@ -4650,6 +4657,11 @@ void calc_boni(int Ind) {
 		p_ptr->skill_srh = p_ptr->skill_srh + 10;
 		csheet_boni[14].srch += 10;
 	}
+
+	/* Trapping skill helps with searching */
+	p_ptr->skill_srh += get_skill_scale(p_ptr, SKILL_TRAPPING, 25);
+	csheet_boni[14].srch += get_skill_scale(p_ptr, SKILL_TRAPPING, 25);
+	p_ptr->skill_fos += get_skill_scale(p_ptr, SKILL_TRAPPING, 15);
 
 	if (p_ptr->shadow_running) { p_ptr->pspeed += 10; csheet_boni[14].spd += 10; }
 
@@ -4753,7 +4765,7 @@ void calc_boni(int Ind) {
 				if (!p_ptr->warning_dual && p_ptr->dual_wield) {
 					p_ptr->warning_dual = 1;
 					msg_print(Ind, "\374\377yHINT: You cannot dual-wield effectively if your armour is too heavy:");
-					msg_print(Ind, "\374\377y      Your secondary weapon will count as \374R'does not exist'\374y, caution!");
+					msg_print(Ind, "\374\377y      Your secondary weapon will count as \377R'does not exist'\377y, caution!");
 					if (p_ptr->pclass != CLASS_ROGUE) {
 						msg_print(Ind, "\374\377y      If you don't want to use lighter armour, consider using one weapon");
 						msg_print(Ind, "\374\377y      and a shield, or (if your STRength is VERY high) a two-handed weapon.");
@@ -5394,7 +5406,7 @@ void calc_boni(int Ind) {
 		p_ptr->to_h += 2 * (hold - o_ptr->weight / 10);
 		p_ptr->dis_to_h += 2 * (hold - o_ptr->weight / 10);
 
-		if (p_ptr->weapon_parry > 0) p_ptr->weapon_parry /= 2; /* easy for now */
+		//parry penalty applied further below
 
 		/* Heavy weapon */
 		p_ptr->heavy_wield = TRUE;
@@ -5407,7 +5419,7 @@ void calc_boni(int Ind) {
 		p_ptr->to_h += 2 * (hold - o_ptr->weight / 10);
 		p_ptr->dis_to_h += 2 * (hold - o_ptr->weight / 10);
 
-		if (p_ptr->weapon_parry > 0) p_ptr->weapon_parry /= 2; /* easy for now */
+		//parry penalty applied further below
 
 		/* Heavy weapon */
 		p_ptr->heavy_wield = TRUE;
@@ -5703,7 +5715,7 @@ void calc_boni(int Ind) {
 
 #ifdef USE_PARRYING
 	if (p_ptr->heavy_wield) p_ptr->weapon_parry /= 3;
-	else if (p_ptr->awkward_wield) p_ptr->weapon_parry /= 2;
+	//else if (p_ptr->awkward_wield) p_ptr->weapon_parry /= 2;  -- the parry chance for this specific scenario is already defined further above
 #endif
 #ifdef USE_BLOCKING
 	if (p_ptr->heavy_shield) p_ptr->shield_deflect /= 3;
@@ -5953,35 +5965,35 @@ void calc_boni(int Ind) {
 	p_ptr->skill_dig += adj_str_dig[p_ptr->stat_ind[A_STR]];
 
 	/* Affect Skill -- disarming (Level, by Class) */
-	//p_ptr->skill_dis += (p_ptr->cp_ptr->x_dis * get_skill(p_ptr, SKILL_DISARM) / 10);
-	p_ptr->skill_dis += (p_ptr->cp_ptr->x_dis * get_skill(p_ptr, SKILL_TRAPPING) / 10);
+	//p_ptr->skill_dis += (p_ptr->cp_ptr->x_dis * get_skill(p_ptr, SKILL_DISARM)) / 10;
+	p_ptr->skill_dis += (p_ptr->cp_ptr->x_dis * get_skill(p_ptr, SKILL_TRAPPING)) / 10;
 
 	/* Affect Skill -- magic devices (Level, by Class) */
-	p_ptr->skill_dev += (p_ptr->cp_ptr->x_dev * get_skill(p_ptr, SKILL_DEVICE) / 10);
+	p_ptr->skill_dev += (p_ptr->cp_ptr->x_dev * get_skill(p_ptr, SKILL_DEVICE)) / 10;
 	p_ptr->skill_dev += adj_int_dev[p_ptr->stat_ind[A_INT]];
 
 	/* Affect Skill -- saving throw (Level, by Class) */
-	p_ptr->skill_sav += (p_ptr->cp_ptr->x_sav * p_ptr->lev / 10);
+	p_ptr->skill_sav += (p_ptr->cp_ptr->x_sav * p_ptr->lev) / 10;
 
 	/* Affect Skill -- stealth (Level, by Class) */
-	p_ptr->skill_stl += (get_skill_scale(p_ptr, SKILL_STEALTH, p_ptr->cp_ptr->x_stl * 5)) + get_skill_scale(p_ptr, SKILL_STEALTH, 25);
-	csheet_boni[14].slth += (get_skill_scale(p_ptr, SKILL_STEALTH, p_ptr->cp_ptr->x_stl * 5)) + get_skill_scale(p_ptr, SKILL_STEALTH, 25);
+	p_ptr->skill_stl += get_skill_scale(p_ptr, SKILL_STEALTH, p_ptr->cp_ptr->x_stl * 5) + get_skill_scale(p_ptr, SKILL_STEALTH, 25);
+	csheet_boni[14].slth += get_skill_scale(p_ptr, SKILL_STEALTH, p_ptr->cp_ptr->x_stl * 5) + get_skill_scale(p_ptr, SKILL_STEALTH, 25);
 
 	/* Affect Skill -- search ability (Level, by Class) */
-	p_ptr->skill_srh += (get_skill_scale(p_ptr, SKILL_SNEAKINESS, p_ptr->cp_ptr->x_srh)) + get_skill_scale(p_ptr, SKILL_TRAPPING, 30);
+	p_ptr->skill_srh += get_skill_scale(p_ptr, SKILL_SNEAKINESS, p_ptr->cp_ptr->x_srh) + get_skill_scale(p_ptr, SKILL_TRAPPING, 30);
 
 	/* Affect Skill -- search frequency (Level, by Class) */
-	p_ptr->skill_fos += (get_skill_scale(p_ptr, SKILL_SNEAKINESS, p_ptr->cp_ptr->x_fos));
+	p_ptr->skill_fos += get_skill_scale(p_ptr, SKILL_SNEAKINESS, p_ptr->cp_ptr->x_fos);
 
 	/* Affect Skill -- combat (normal) (Level, by Class) */
-        p_ptr->skill_thn += (p_ptr->cp_ptr->x_thn * (((2 * get_skill(p_ptr, SKILL_MASTERY)) + (1 * get_skill(p_ptr, SKILL_COMBAT))) / 10) / 10);
+        p_ptr->skill_thn += p_ptr->cp_ptr->x_thn * ((2 * get_skill(p_ptr, SKILL_MASTERY)) + (1 * get_skill(p_ptr, SKILL_COMBAT))) / 100;
 
 	/* Affect Skill -- combat (shooting) (Level, by Class) */
 	//p_ptr->skill_thb += (p_ptr->cp_ptr->x_thb * (((2 * get_skill(p_ptr, SKILL_ARCHERY)) + (1 * get_skill(p_ptr, SKILL_COMBAT))) / 10) / 10);
-	p_ptr->skill_thb += (p_ptr->cp_ptr->x_thb * (((get_skill(p_ptr, SKILL_ARCHERY) + get_skill(p_ptr, get_archery_skill(p_ptr))) + (1 * get_skill(p_ptr, SKILL_COMBAT))) / 10) / 10);
+	p_ptr->skill_thb += (p_ptr->cp_ptr->x_thb * (get_skill(p_ptr, SKILL_ARCHERY) + get_skill(p_ptr, get_archery_skill(p_ptr)) + get_skill_scale(p_ptr, SKILL_COMBAT, 30))) / 100;
 
 	/* Affect Skill -- combat (throwing) (Level, by Class) */
-	p_ptr->skill_tht += (p_ptr->cp_ptr->x_thb * get_skill_scale(p_ptr, SKILL_COMBAT, 10));
+	p_ptr->skill_tht += (p_ptr->cp_ptr->x_thb * (get_skill_scale(p_ptr, SKILL_COMBAT, 10) + get_skill_scale(p_ptr, SKILL_BOOMERANG, 35))) / 30;
 
 
 
@@ -9040,6 +9052,9 @@ void clear_current(int Ind) {
 	p_ptr->current_curse = 0;
 	p_ptr->current_tome_creation = 0;
 	p_ptr->current_rune = 0;
+#ifdef ENABLE_EXCAVATION
+	p_ptr->current_chemical = 0;
+#endif
 	p_ptr->current_telekinesis = NULL;
 }
 
@@ -9195,6 +9210,13 @@ void handle_request_return_str(int Ind, int id, char *str) {
 		bool old_rand;
 		u32b tmp_seed;
 
+		/* Cancel an ongoing order? */
+		if (!strcasecmp(str, "cancel")) {
+			p_ptr->item_order_store = 0;
+			msg_print(Ind, "Alright, your order has been cancelled.");
+			return;
+		}
+
 		if (p_ptr->item_order_store != 0) {
 			if (p_ptr->item_order_store - 1 == p_ptr->store_num && p_ptr->item_order_town == gettown(Ind))
 				msg_print(Ind, "\377yYou still have an order open at this store!");
@@ -9219,7 +9241,7 @@ void handle_request_return_str(int Ind, int id, char *str) {
 
 		/* trim */
 		while (*str == ' ') str++;
-		while (str[strlen(str - 1)] == ' ') str[strlen(str - 1)] = 0;
+		while (str[strlen(str) - 1] == ' ') str[strlen(str) - 1] = 0;
 		if (!(*str)) return;
 		for (i = 0; i < strlen(str) - 1; i++) {
 			if (str[i] == ' ' && str[i + 1] == ' ') continue;
@@ -9271,6 +9293,16 @@ void handle_request_return_str(int Ind, int id, char *str) {
 				return;
 				//*str2 = 0;
 			}
+		} else if (!strncasecmp(str2, "prayer scrolls", 14)) {
+			/* extract spell name, error if not speficied */
+			if (strlen(str) > 18) {
+				strcpy(str2, str + 18);
+				strcpy(str, "Prayer Scrolls");
+			} else {
+				msg_print(Ind, "I need to know which prayer you want in the prayer scrolls.");
+				return;
+				//*str2 = 0;
+			}
 		} else if (!strncasecmp(str2, "spell scrolls", 13)) {
 			/* extract spell name, error if not speficied */
 			if (strlen(str) > 17) {
@@ -9288,6 +9320,16 @@ void handle_request_return_str(int Ind, int id, char *str) {
 				strcpy(str, "Spell Crystal");
 			} else {
 				msg_print(Ind, "I need to know which spell you want in the spell crystal.");
+				return;
+				//*str2 = 0;
+			}
+		} else if (!strncasecmp(str2, "prayer scroll", 13)) {
+			/* extract spell name, error if not speficied */
+			if (strlen(str) > 17) {
+				strcpy(str2, str + 17);
+				strcpy(str, "Prayer Scroll");
+			} else {
+				msg_print(Ind, "I need to know which prayer you want in the prayer scroll.");
 				return;
 				//*str2 = 0;
 			}
@@ -9407,7 +9449,7 @@ void handle_request_return_str(int Ind, int id, char *str) {
 				}
 				/* still failure? */
 				if (i == max_spells && extra == -1) {
-					msg_print(Ind, "Sorry, I don't know of such an item or spell.");
+					msg_print(Ind, "Sorry, I don't know of such an item, spell or prayer.");
 					return;
 				}
 				/* success */
@@ -9519,7 +9561,7 @@ void handle_request_return_str(int Ind, int id, char *str) {
 			}
 #endif
 		}
-		object_desc(0, o_name, &forge, FALSE, 256); //for checking if it's a scroll of crystal, namewise
+		object_desc(0, o_name, &forge, FALSE, 256); //for checking if it's a scroll or crystal, namewise
 
 		forge.number = num;
 		price = price_item(Ind, &forge, ot_ptr->min_inflate, FALSE);
@@ -10043,7 +10085,8 @@ void handle_request_return_cfr(int Ind, int id, bool cfr) {
  #ifdef TEST_SERVER
 		p_ptr->item_order_turn = turn; //instant delivery for testing purpose
  #else
-		p_ptr->item_order_turn = turn + dur;
+		if (p_ptr->admin_dm) p_ptr->item_order_turn = turn; //instant delivery for admin dm in any case..
+		else p_ptr->item_order_turn = turn + dur;
  #endif
 		/* give in-game-time message */
 		if (dur <= HOUR / 2) msg_format(Ind, "It should arrive shortly.");

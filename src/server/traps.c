@@ -170,7 +170,7 @@ static bool do_player_trap_garbage(int Ind, int times) {
 		l = rand_int(max_k_idx);
 
 		/* hack -- !ruin, !death cannot be generated */
-		if (!k_info[l].tval || k_info[l].cost || k_info[l].level > lv || k_info[l].level > 30) continue;
+		if (!k_info[l].tval || k_info[l].cost || k_info[l].level > lv || k_info[l].level > 30 || !k_info[l].chance[0]) continue;
 
 		o_ptr = &forge;
 		invcopy(o_ptr, l);
@@ -313,6 +313,8 @@ static bool do_trap_teleport_away(int Ind, object_type *i_ptr, s16b y, s16b x) {
 	s16b  x1;
 	s16b  y1;
 
+	int tries = 1000;
+
 	/* Paranoia */
 	cave_type **zcave;
 	if (!in_bounds(y, x)) return(FALSE);
@@ -329,7 +331,7 @@ static bool do_trap_teleport_away(int Ind, object_type *i_ptr, s16b y, s16b x) {
 	if (i_ptr->name1 == ART_POWER) return (FALSE);
 	if (cfg.anti_arts_hoard && true_artifact_p(i_ptr) && (rand_int(100) > 9)) return(FALSE);
 
-	while (o_idx == 0) {
+	while (o_idx == 0 && tries--) {
 		x1 = rand_int(p_ptr->cur_wid);
 		y1 = rand_int(p_ptr->cur_hgt);
 
@@ -342,6 +344,8 @@ static bool do_trap_teleport_away(int Ind, object_type *i_ptr, s16b y, s16b x) {
 		if (!cave_clean_bold(zcave, y1, x1)) continue;
 		o_idx = drop_near_severe(Ind, i_ptr, 0, &p_ptr->wpos, y1, x1);
 	}
+
+	if (o_idx <= 0) return FALSE;
 
 	o_ptr = &o_list[o_idx];
 
@@ -867,8 +871,7 @@ bool player_activate_trap_type(int Ind, s16b y, s16b x, object_type *i_ptr, s16b
 			if ((!p_ptr->paralyzed &&
 			    (rand_int(160 + UNAWARENESS(p_ptr)) <
 			    (adj_dex_safe[p_ptr->stat_ind[A_DEX]] + p_ptr->lev))) ||
-			    (TOOL_EQUIPPED(p_ptr) == SV_TOOL_THEFT_PREVENTION &&
-			     magik (75)) ) {
+			    (TOOL_EQUIPPED(p_ptr) == SV_TOOL_THEFT_PREVENTION && magik(100)) ) { //80
 				/* Saving throw message */
 				msg_print(Ind, "Your backpack seems to vibrate strangely!");
 				break;
@@ -890,26 +893,27 @@ bool player_activate_trap_type(int Ind, s16b y, s16b x, object_type *i_ptr, s16b
 				/* Don't steal artifacts  -CFT */
 				if (artifact_p(j_ptr)) continue;
 
-				/* Get a description */
-				object_desc(Ind, i_name, j_ptr, FALSE, 3);
-
-				/* Message */
-				msg_format(Ind, "\376\377o%sour %s (%c) was stolen!",
-						((j_ptr->number > 1) ? "One of y" : "Y"),
-						i_name, index_to_label(i));
-
 				/* Create the item */
 				q_ptr = &forge;
 				object_copy(q_ptr, j_ptr);
 				q_ptr->number = 1;
-				if (is_magic_device(j_ptr->tval)) divide_charged_item(q_ptr, j_ptr, 1);
+				//if (is_magic_device(j_ptr->tval)) divide_charged_item(q_ptr, j_ptr, 1);
+				if (is_magic_device(j_ptr->tval)) continue; /* lel */
 
-				/* Drop it somewhere */
-				do_trap_teleport_away(Ind, q_ptr, y, x);
+				/* Drop it somewhere - only remove our items if it was dropped successfully! */
+				if (do_trap_teleport_away(Ind, q_ptr, y, x)) {
+					/* Get a description */
+					object_desc(Ind, i_name, j_ptr, FALSE, 3);
 
-				inven_item_increase(Ind, i,-1);
-				inven_item_optimize(Ind, i);
-				ident = TRUE;
+					/* Message */
+					msg_format(Ind, "\376\377o%sour %s (%c) was stolen!",
+					    ((j_ptr->number > 1) ? "One of y" : "Y"),
+					    i_name, index_to_label(i));
+
+					inven_item_increase(Ind, i, -1);
+					inven_item_optimize(Ind, i);
+					ident = TRUE;
+				}
 			}
 			break;
 
@@ -1670,6 +1674,7 @@ bool player_activate_trap_type(int Ind, s16b y, s16b x, object_type *i_ptr, s16b
 
 		/* Bolt Trap */
 		case TRAP_OF_ROCKET: ident = player_handle_breath_trap(Ind, 1, GF_ROCKET, trap); destroy_chest(i_ptr); break;
+		//case TRAP_OF_DEATH_RAY
 		case TRAP_OF_NUKE_BOLT: ident =player_handle_breath_trap(Ind, 1, GF_NUKE, trap); break;
 #if 1	// coming..when it comes :) //very pow erful btw. insta-kills weaker chars.
 		case TRAP_OF_HOLY_FIRE: ident = player_handle_breath_trap(Ind, 1, GF_HOLY_FIRE, trap); break;
@@ -1735,7 +1740,7 @@ bool player_activate_trap_type(int Ind, s16b y, s16b x, object_type *i_ptr, s16b
 			msg_print(Ind, "You are treated to a marvellous elven cuisine!");
 			if (!p_ptr->suscep_life && p_ptr->prace != RACE_ENT) {
 				/* 1turn = 100 food value when satiated */
-				(void)set_food(Ind, PY_FOOD_MAX + glev*50 + 1000 + rand_int(1000));
+				(void)set_food(Ind, PY_FOOD_MAX + glev * 50 + 1000 + rand_int(1000));
 			}
 			ident = TRUE;
 			break;
@@ -2223,6 +2228,9 @@ bool player_activate_trap_type(int Ind, s16b y, s16b x, object_type *i_ptr, s16b
 				/* Skip dead objects */
 				if (!o_ptr->k_idx) continue;
 
+				/* Skip monster inventory/monster trap items */
+				if (o_ptr->held_m_idx || o_ptr->embed) continue;
+
 				/* Skip objects not on this depth */
 				if (!inarea(&o_ptr->wpos, wpos)) continue;
 
@@ -2276,6 +2284,9 @@ bool player_activate_trap_type(int Ind, s16b y, s16b x, object_type *i_ptr, s16b
 				/* Skip objects not on this depth */
 				if (!inarea(&o_ptr->wpos, wpos)) continue;
 
+				/* Skip monster inventory/monster trap items */
+				if (o_ptr->held_m_idx || o_ptr->embed) continue;
+
 				if (magik(glev)) place_trap(wpos, o_ptr->iy, o_ptr->ix, 0);
 			}
 			msg_print(Ind, "You feel uneasy.");
@@ -2321,6 +2332,7 @@ bool player_activate_trap_type(int Ind, s16b y, s16b x, object_type *i_ptr, s16b
 		/* Death Molds Trap */
 		case TRAP_OF_DEATH_MOLDS:
 		case TRAP_OF_DEATH_SWORDS:
+			/* this is way too dangerous for parties -- disabled */
 			l = rand_range(1, 2);
 			for (k = tdi[l]; k < tdi[l + 1]; k++) {
 				s16b cx = p_ptr->px + tdx[k];
@@ -2580,7 +2592,7 @@ bool player_activate_trap_type(int Ind, s16b y, s16b x, object_type *i_ptr, s16b
 		/* Jack-in-the-box trap */
 		case TRAP_OF_JACK:
 			summon_override_checks = SO_IDDC;
-			for (k = 0; k < randint(3); k++)
+			//for (k = 0; k < randint(3); k++)
 				ident |= summon_specific(wpos, y, x, glev, 0, SUMMON_BIZARRE6, 1, 0);
 			summon_override_checks = SO_NONE;
 #if 0
@@ -3128,8 +3140,9 @@ static s16b pop_montrap(int Ind, object_type *j_ptr, u16b next_o_idx) {
 		object_copy(o_ptr, j_ptr);
 
 		/* Location */
-		o_ptr->iy = 255 - py;	/* Megahack - never inbounds XXX */
+		o_ptr->iy = py;
 		o_ptr->ix = px;
+		o_ptr->embed = 1;
 		wpcopy(&o_ptr->wpos, wpos);
 
 		/* Forget monster */
@@ -3242,8 +3255,9 @@ void do_cmd_set_trap(int Ind, int item_kit, int item_load) {
 
 	/* Hack -- yet another anti-cheeze(yaac) */
 	if (p_ptr->max_plv < cfg.newbies_cannot_drop || p_ptr->inval) {
-		o_ptr->level = 0;
-		j_ptr->level = 0;
+		/* Allow unenchanted items to not get level0'ed, to avoid too much confusion/annoyance for newbies. */
+		if (o_ptr->to_h > 0 || o_ptr->to_d > 0 || o_ptr->name1 || o_ptr->name2) o_ptr->level = 0;
+		if (j_ptr->to_h > 0 || j_ptr->to_d > 0 || j_ptr->name1 || j_ptr->name2 || !is_ammo(j_ptr->tval)) j_ptr->level = 0;
 	}
 
 	/* Assume a single object */
@@ -3254,14 +3268,17 @@ void do_cmd_set_trap(int Ind, int item_kit, int item_load) {
 	if (o_ptr->sval != SV_TRAPKIT_DEVICE) {
 		object_flags(o_ptr, &f1, &f2, &f3, &f4, &f5, &f6, &esp);
 
-		if ((f3 & TR3_XTRA_SHOTS) && (o_ptr->pval > 0)) num += o_ptr->pval;
+		if (f3 & TR3_XTRA_SHOTS) num += o_ptr->pval;
 		if (f2 & (TRAP2_AUTOMATIC_5 | TRAP2_AUTOMATIC_99)) num = 99;
 		if (num > j_ptr->number) num = j_ptr->number;
-#if 0
-		c = format("How many (1-%d)? ", num);
-		/* Ask for number of items to use */
-		num = get_quantity(c, num);
-#endif
+		/* Execption: For magic ammo, only 1 is needed! (And artifact ammo cannot have a stack anyway.) */
+		if (is_ammo(j_ptr->tval) && j_ptr->sval == SV_AMMO_MAGIC) {
+			/* If ammo is neverending, just 1 is enough */
+			num = 1;
+			/* Still need more magic ammo if the shots are supposed to be simultaneously fired, unlike for ranged weapons.
+			   So for now we interpret XTRA_SHOTS for traps differently than XTRA_SHOTS for ranged weapons. */
+			if (f3 & TR3_XTRA_SHOTS) num += o_ptr->pval;
+		}
 	}
 
 	/* Canceled */
@@ -3275,8 +3292,7 @@ void do_cmd_set_trap(int Ind, int item_kit, int item_load) {
 
 	/* Check interference */
 	/* Basically it's not so good idea to set traps next to the enemy */
-	if (interfere(Ind, 50 - get_skill_scale(p_ptr, SKILL_TRAPPING, 30))) /* setting-trap interference chance */
-		return;
+	if (interfere(Ind, 50 - get_skill_scale(p_ptr, SKILL_TRAPPING, 30))) return; /* setting-trap interference chance */
 
 	/* Get local object */
 	i_ptr = &object_type_body;
@@ -3321,13 +3337,10 @@ void do_cmd_set_trap(int Ind, int item_kit, int item_load) {
 	inven_item_describe(Ind, item_kit);
 	inven_item_increase(Ind, item_load, -num);
 	inven_item_describe(Ind, item_load);
-
-	for (i = 0; i < INVEN_TOTAL; i++) {
+	for (i = 0; i < INVEN_TOTAL; i++)
 		if (inven_item_optimize(Ind, i)) break;
-	}
-	for (i = 0; i < INVEN_TOTAL; i++) {
+	for (i = 0; i < INVEN_TOTAL; i++)
 		inven_item_optimize(Ind, i);
-	}
 
 	/* Preserve former feat */
 	cs_ptr->sc.montrap.feat = c_ptr->feat;
@@ -3370,6 +3383,10 @@ void do_cmd_disarm_mon_trap_aux(worldpos *wpos, int y, int x) {
 		/* Acquire object */
 		o_ptr = &o_list[this_o_idx];
 
+#ifdef ENABLE_EXCAVATION
+		if (o_ptr->tval == TV_CHARGE) s_printf("CHARGE: Type %d disarmed on %d,%d,%d at %d,%d.\n", o_ptr->sval, wpos->wx, wpos->wy, wpos->wz, o_ptr->ix, o_ptr->iy);
+#endif
+
 		/* Acquire next object */
 		next_o_idx = o_ptr->next_o_idx;
 
@@ -3382,6 +3399,8 @@ void do_cmd_disarm_mon_trap_aux(worldpos *wpos, int y, int x) {
 		/* Copy the object */
 		object_copy(q_ptr, o_ptr);
 
+		/* Don't go recursive, because delete_object_idx() actually calls erase_mon_trap()! */
+		o_ptr->embed = 0;
 		/* Delete the object */
 		delete_object_idx(this_o_idx, FALSE);
 
@@ -3393,14 +3412,30 @@ void do_cmd_disarm_mon_trap_aux(worldpos *wpos, int y, int x) {
 	cs_erase(c_ptr, cs_ptr);
 }
 
-void erase_mon_trap(worldpos *wpos, int y, int x) {
+void erase_mon_trap(worldpos *wpos, int y, int x, s16b o_idx) {
 	int this_o_idx, next_o_idx;
 	object_type *o_ptr;
 	cave_type *c_ptr;
 	cave_type **zcave;
 	struct c_special *cs_ptr;
 
-	if (!(zcave = getcave(wpos))) return;
+	/* Restore the floor feature */
+	if (!(zcave = getcave(wpos))) {
+		/* Fall back to at least erasing the object in it and any other object linked to it.
+		   Note that this traverses only from trapkit to trapload item, but not vice versa, so not perfect. */
+		if (!o_idx) return;
+		for (this_o_idx = o_idx; this_o_idx; this_o_idx = next_o_idx) {
+			o_ptr = &o_list[this_o_idx];
+#ifdef ENABLE_EXCAVATION
+			if (o_ptr->tval == TV_CHARGE) s_printf("CHARGE: Type %d erased on %d,%d,%d at %d,%d.\n", o_ptr->sval, wpos->wx, wpos->wy, wpos->wz, o_ptr->ix, o_ptr->iy);
+#endif
+			next_o_idx = o_ptr->next_o_idx;
+			o_ptr->held_m_idx = 0;
+			o_ptr->embed = 0; /* Don't go recursive, because delete_object_idx() actually calls erase_mon_trap()! */
+			delete_object_idx(this_o_idx, TRUE);
+		}
+		return;
+	}
 
 	c_ptr = &zcave[y][x];
 	cs_ptr = GetCS(c_ptr, CS_MON_TRAP);
@@ -3411,18 +3446,25 @@ void erase_mon_trap(worldpos *wpos, int y, int x) {
 		/* Acquire object */
 		o_ptr = &o_list[this_o_idx];
 
+#ifdef ENABLE_EXCAVATION
+		if (o_ptr->tval == TV_CHARGE) s_printf("CHARGE: Type %d erased on %d,%d,%d at %d,%d.\n", o_ptr->sval, wpos->wx, wpos->wy, wpos->wz, o_ptr->ix, o_ptr->iy);
+#endif
+
 		/* Acquire next object */
 		next_o_idx = o_ptr->next_o_idx;
 
 		/* Paranoia */
 		o_ptr->held_m_idx = 0;
 
+		/* Don't go recursive, because delete_object_idx() actually calls erase_mon_trap()! */
+		o_ptr->embed = 0;
 		/* Delete the object */
 		delete_object_idx(this_o_idx, TRUE);
 	}
 
 	//cave[py][px].special = cave[py][px].special2 = 0;
 	cs_erase(c_ptr, cs_ptr);
+	return;
 }
 
 /* hack: Identify the load? */
@@ -4474,13 +4516,22 @@ static bool mon_hit_trap_aux_potion(int who, int m_idx, object_type *o_ptr) {
 		}
 	}
 	else if (o_ptr->tval == TV_FLASK) {
-		typ = GF_FIRE;
-		dam = damroll(2, 4);
-		rad = 2;
+		switch (o_ptr->sval) {
+		case SV_FLASK_OIL:
+			typ = GF_FIRE;
+			dam = damroll(3, 5);
+			rad = 2;
+			break;
+#ifdef ENABLE_EXCAVATION
+		case SV_FLASK_ACID:
+			typ = GF_ACID_BLIND;
+			dam = damroll(5, 5);
+			rad = 2;
+			break;
+#endif
+		}
 	}
-	else {
-		return (FALSE);
-	}
+	else return (FALSE);
 
 	identify_mon_trap_load(who, o_ptr);
 
@@ -5041,6 +5092,7 @@ bool mon_hit_trap(int m_idx) {
 				/* Hack -- minus * minus * minus = minus */
 				if (load_o_ptr->pval) do_arrow_explode(who > 0 ? who : 0 - who, load_o_ptr, &wpos, my, mx, 2);
 
+				/* Decrease ammo, except for magic ammo or artifact ammo of course */
 				if (!(load_o_ptr->tval == TV_ARROW &&
 				    load_o_ptr->sval == SV_AMMO_MAGIC)
 				    && !artifact_p(load_o_ptr)) {
@@ -5056,6 +5108,7 @@ bool mon_hit_trap(int m_idx) {
 
 					if (load_o_ptr->number <= 0) {
 						remove = TRUE;
+						o_list[kit_o_ptr->next_o_idx].embed = 0; /* Don't go recursive, because delete_object_idx() actually calls erase_mon_trap()! */
 						delete_object_idx(kit_o_ptr->next_o_idx, TRUE);
 						kit_o_ptr->next_o_idx = 0;
 					}
@@ -5105,6 +5158,7 @@ bool mon_hit_trap(int m_idx) {
 
 				if (load_o_ptr->number <= 0) {
 					remove = TRUE;
+					o_list[kit_o_ptr->next_o_idx].embed = 0; /* Don't go recursive, because delete_object_idx() actually calls erase_mon_trap()! */
 					delete_object_idx(kit_o_ptr->next_o_idx, TRUE);
 					kit_o_ptr->next_o_idx = 0;
 				}
@@ -5150,6 +5204,7 @@ bool mon_hit_trap(int m_idx) {
 					remove = TRUE;
 					/* runes stay, scrolls poof */
 					if (load_o_ptr->tval == TV_SCROLL) {
+						o_list[kit_o_ptr->next_o_idx].embed = 0; /* Don't go recursive, because delete_object_idx() actually calls erase_mon_trap()! */
 						delete_object_idx(kit_o_ptr->next_o_idx, TRUE);
 						kit_o_ptr->next_o_idx = 0;
 					} else {

@@ -676,7 +676,7 @@ if (compaction == 1 || compaction == 2) { /* #ifdef COMPACT_PLAYERLIST */
 
 	fprintf(fff, "%s, %sL%d \377%c", q_ptr->name, attr_p, q_ptr->lev, attr);
 
-	fprintf(fff, "%s %s", get_prace(q_ptr),  p);
+	fprintf(fff, "%s%s", get_prace2(q_ptr),  p);
 
 	/* PK */
 	if (cfg.use_pk_rules == PK_RULES_DECLARE) {
@@ -812,7 +812,7 @@ if (compaction == 1 || compaction == 2) { /* #ifdef COMPACT_PLAYERLIST */
 	fprintf(fff, "%s, %sL%d\377%c %s ", q_ptr->name, attr_p, q_ptr->lev, attr, q_ptr->male ? "Male" : "Female");
   #endif
 
-	fprintf(fff, "%s %s", get_prace(q_ptr),  p);
+	fprintf(fff, "%s%s", get_prace2(q_ptr),  p);
 
 	/* PK */
 	if (cfg.use_pk_rules == PK_RULES_DECLARE) {
@@ -940,8 +940,8 @@ if (compaction == 1 || compaction == 2) { /* #ifdef COMPACT_PLAYERLIST */
 	fprintf(fff, "%s, %sL%d\377%c ", q_ptr->name, attr_p, q_ptr->lev, attr);
   #endif
 
-	fprintf(fff, "%s", get_prace(q_ptr));
-	fprintf(fff, " %s", class_info[q_ptr->pclass].title);
+	fprintf(fff, "%s", get_prace2(q_ptr));
+	fprintf(fff, "%s", class_info[q_ptr->pclass].title);
 
 	/* location */
 	if (attr == 'G' || attr == 'B' || admin
@@ -1212,7 +1212,7 @@ if (compaction == 1 || compaction == 2) { /* #ifdef COMPACT_PLAYERLIST */
     #else
 	fprintf(fff, "  %s the ", q_ptr->name);
     #endif
-	fprintf(fff, "%s %s", get_prace(q_ptr),  p); 
+	fprintf(fff, "%s%s", get_prace2(q_ptr),  p); 
    #endif
 	if (q_ptr->mode & MODE_PVP) fprintf(fff, " Gladiator");
 
@@ -1467,6 +1467,8 @@ if (compaction == 1 || compaction == 2) { //#ifdef COMPACT_PLAYERLIST
 			/* Print questing flag */
 			if (q_ptr->xorder_id) fprintf(fff, " X");
 		}
+		/* If both are in IDDC, display depth, for easier floor management */
+		else if (iddc && in_irondeepdive(&p_ptr->wpos)) fprintf(fff, "%s", wpos_format(-Ind, &q_ptr->wpos));
 
 		//fprintf(fff, ", %s@%s", q_ptr->accountname, q_ptr->hostname);
 
@@ -1560,6 +1562,8 @@ if (compaction == 1 || compaction == 2) { //#ifdef COMPACT_PLAYERLIST
 			/* Print questing flag */
 			if (q_ptr->xorder_id) fprintf(fff, " X");
 		}
+		/* If both are in IDDC, display depth, for easier floor management */
+		else if (iddc && in_irondeepdive(&p_ptr->wpos)) fprintf(fff, "%s", wpos_format(-Ind, &q_ptr->wpos));
 
 		/* Print afk/info message */
 		if ((!q_ptr->afk) || !strlen(q_ptr->afk_msg)) {
@@ -1701,6 +1705,8 @@ if (compaction == 1 || compaction == 2) { //#ifdef COMPACT_PLAYERLIST
 			    );
 #endif
 		}
+		/* If both are in IDDC, display depth, for easier floor management */
+		else if (iddc && in_irondeepdive(&p_ptr->wpos)) fprintf(fff, "%s", wpos_format(-Ind, &q_ptr->wpos));
 
 		/* Quest flag */
 		fprintf(fff, " %c", (q_ptr->xorder_id ? 'X' : ' '));
@@ -2322,7 +2328,7 @@ void do_cmd_check_server_settings(int Ind) {
 
 	/* level preservation */
 	if (cfg.lifes)
-		fprintf(fff, "Normal mode players can be resurrected up to %d times until their soul\n will escape and their bodies will be permanently destroyed.\n", cfg.lifes);
+		fprintf(fff, "Normal mode characters can be resurrected up to %d times until their soul\n will escape and their bodies will be permanently destroyed.\n", cfg.lifes);
 	if (cfg.no_ghost)
 		fprintf(fff, "You disappear the moment you die, without becoming a ghost.\n");
 	switch (cfg.replace_hiscore & 0x7) {
@@ -2347,7 +2353,7 @@ void do_cmd_check_server_settings(int Ind) {
 
 	fprintf(fff,"\n");
 
-	fprintf(fff, "Players' running speed is boosted (x%d, ie. %+d%%).\n", cfg.running_speed, (cfg.running_speed - 5) * 100 / 5);
+	fprintf(fff, "Characters' running speed is boosted (x%d, ie. %+d%%).\n", cfg.running_speed, (cfg.running_speed - 5) * 100 / 5);
 	fprintf(fff, "While 'resting', HP/MP recovers %d times quicker (%+d%%)\n", cfg.resting_rate, (cfg.resting_rate-3)*100/3);
 
 	if ((k = cfg.party_xp_boost))
@@ -2355,13 +2361,13 @@ void do_cmd_check_server_settings(int Ind) {
 
 	if ((k = cfg.newbies_cannot_drop)) {
 #if STARTEQ_TREATMENT == 1
-		fprintf(fff, "Players under exp.level %d are not allowed to drop items/gold.\n", k);
+		fprintf(fff, "Characters under exp.level %d are not allowed to drop items/gold.\n", k);
 #elif STARTEQ_TREATMENT > 1
-		fprintf(fff, "Level of items dropped by players under exp.level %d will become 0,\n", k);
+		fprintf(fff, "Level of items dropped by characters under exp.level %d will become 0,\n", k);
 		fprintf(fff, " making the item unusable by any other character than this player.\n");
-		fprintf(fff, "Players under exp.level %d are not allowed to drop gold.\n", k);
+		fprintf(fff, "Characters under exp.level %d are not allowed to drop gold.\n", k);
 #else
-		fprintf(fff, "Players under exp.level %d are not allowed to drop gold.\n", k);
+		fprintf(fff, "Characters under exp.level %d are not allowed to drop gold.\n", k);
 #endif
 	}
 
@@ -2399,11 +2405,11 @@ void do_cmd_check_server_settings(int Ind) {
 	fprintf(fff,"\n");
 
 	if (cfg.houses_per_player) {
-		//fprintf(fff, "Players may own up to level/%d houses (caps at level 50) at once", cfg.houses_per_player);
-		fprintf(fff, "Players may own up to level/%d houses (caps at level %d) at once", cfg.houses_per_player, (50 / cfg.houses_per_player) * cfg.houses_per_player);
+		//fprintf(fff, "Characters may own up to level/%d houses (caps at level 50) at once", cfg.houses_per_player);
+		fprintf(fff, "Characters may own up to level/%d houses (caps at level %d) at once", cfg.houses_per_player, (50 / cfg.houses_per_player) * cfg.houses_per_player);
 		if (cfg.castles_per_player == 1) {
 			fprintf(fff, "\n of which one may be a castle (house with moat)");
-			if (cfg.castles_for_kings) fprintf(fff, "\n provided the player is a king, queen, emperor or empress.\n");
+			if (cfg.castles_for_kings) fprintf(fff, "\n provided the character is a king, queen, emperor or empress.\n");
 			else fprintf(fff, ".\n");
 		} else if (cfg.castles_per_player) {
 			fprintf(fff, "\n of which %d may be a castles (houses with moat)", cfg.castles_per_player);
@@ -2418,14 +2424,14 @@ void do_cmd_check_server_settings(int Ind) {
 		else fprintf(fff, "Players may as many houses as they like unless hitting the account-wide limit");
 		if (cfg.castles_per_player == 1) {
 			fprintf(fff, "\n of which one may be a castle (house with moat)");
-			if (cfg.castles_for_kings) fprintf(fff, "\n provided the player is a king, queen, emperor or empress.\n");
+			if (cfg.castles_for_kings) fprintf(fff, "\n provided the character is a king, queen, emperor or empress.\n");
 			else fprintf(fff, ".\n");
 		} else if (cfg.castles_per_player) {
 			fprintf(fff, "\n of which %d may be a castles (houses with moat)", cfg.castles_per_player);
-			if (cfg.castles_for_kings) fprintf(fff, "\n provided the player is a king, queen, emperor or empress.\n");
+			if (cfg.castles_for_kings) fprintf(fff, "\n provided the character is a king, queen, emperor or empress.\n");
 			else fprintf(fff, ".\n");
 		} else {
-			if (cfg.castles_for_kings) fprintf(fff, "\n or castles if the player is a king, queen, emperor or empress.\n");
+			if (cfg.castles_for_kings) fprintf(fff, "\n or castles if the character is a king, queen, emperor or empress.\n");
 			else fprintf(fff, ".\n");
 		}
 	}
@@ -2676,6 +2682,8 @@ void do_cmd_check_server_settings(int Ind) {
 
 		/* Output color byte */
 		//fprintf(fff, "%c\n", 'w');
+
+		if (cfg.admins_never_expire) fprintf(fff, "Admin characters (dungeon wizards/masters) never expire.\n");
 
 		fprintf(fff, "dun_unusual: %d (default = 200)\n", cfg.dun_unusual);
 		fprintf(fff, "Stores change their inventory every ~%d seconds.\n", (cfg.store_turns * 10) / cfg.fps);
@@ -3634,10 +3642,7 @@ void do_cmd_check_extra_info(int Ind, bool admin) {
 #endif
 
 #ifdef AUTO_RET_CMD
-	if (p_ptr->autoret) {
-		if (p_ptr->autoret >= 128) msg_format(Ind, "You have set mimic power '%c)' for auto-retaliation in towns.", p_ptr->autoret - 128 - 1 + 'a');
-		else msg_format(Ind, "You have set mimic power '%c)' for auto-retaliation.", p_ptr->autoret - 1 + 'a');
-	}
+	show_autoret(Ind, 0, FALSE);
 #endif
 
 	if (get_skill(p_ptr, SKILL_AURA_FEAR)) check_aura(Ind, 0); /* MAX_AURAS */
@@ -3791,7 +3796,7 @@ void do_cmd_check_extra_info(int Ind, bool admin) {
 		case 2051: msg_print(Ind, "\377y* XtremelyLow-server-shutdown command pending *"); break;
 		case 2048: msg_print(Ind, "\377y* Empty-server-shutdown command pending *"); break;
 		case 2047: msg_print(Ind, "\377y* Low-server-shutdown command pending *"); break;
-		case 2046: msg_print(Ind, "\377y* VeryLow-server-shutdown command pending *");; break;
+		case 2046: msg_print(Ind, "\377y* VeryLow-server-shutdown command pending *"); break;
 		case 2045: msg_print(Ind, "\377y* None-server-shutdown command pending *"); break;
 		case 2044: msg_print(Ind, "\377y* ActiveVeryLow-server-shutdown command pending *"); break;
 		case 2043:
@@ -3878,4 +3883,30 @@ void do_cmd_check_extra_info(int Ind, bool admin) {
 	}
 
 	msg_print(Ind, " ");
+}
+
+/* Display current retaliate_cmd (mimic power/rune) auto-ret settings, if set.
+   Verbose: Even give a message if no power is set.
+   typ = 0: Show all,
+   typ = 1: Show mimic power only,
+   typ = 2: Show rune only.
+*/
+void show_autoret(int Ind, byte typ, bool verbose) {
+	player_type *p_ptr = Players[Ind];
+	u16b ar = p_ptr->autoret;
+
+	/* Mimic power */
+	if (typ != 2) {
+		if (ar & 0x00FF) {
+			if (ar & 0x0080) msg_format(Ind, "You have set mimic power '%c)' for auto-retaliation in towns.", (ar & ~0x0080) - 1 + 'a');
+			else msg_format(Ind, "You have set mimic power '%c)' for auto-retaliation.", ar - 1 + 'a');
+		} else if (verbose) msg_print(Ind, "You have not set a mimic power for auto-retaliation. ('/arm help' for details.)");
+	}
+	/* Rune */
+	if (typ != 1) {
+		if (ar & 0xFF00) {
+			if (ar & 0x8000) msg_format(Ind, "You have set rune '%c)' for auto-retaliation in towns.", ((ar & ~0x8000) >> 8) - 1 + 'a');
+			else msg_format(Ind, "You have set rune '%c)' for auto-retaliation.", (ar >> 8) - 1 + 'a');
+		} else if (verbose) msg_print(Ind, "You have not set a rune for auto-retaliation. ('/arr help' for details.)");
+	}
 }

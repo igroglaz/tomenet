@@ -17,6 +17,7 @@
 /* Don't display 'Trait' if traits aren't available */
 #define HIDE_UNAVAILABLE_TRAIT
 
+int animate_lightning = 0, animate_lightning_vol = 100;
 
 /*
  * Print character info at given row, column in a 13 char field
@@ -64,7 +65,7 @@ void cnv_stat(int val, char *out_val) {
 			if (bonus >= 220)
 				sprintf(out_val, "    **");
 			else
-				sprintf(out_val, "    %2d", 18 + (bonus / 10));
+				sprintf(out_val, "  %2d.%1d", 18 + (bonus / 10), bonus % 10);
 		}
 		/* From 3 to 18 */
 		else sprintf(out_val, "    %2d", val);
@@ -949,8 +950,16 @@ void prt_speed(int speed) {
 	char buf[32] = "";
 	int x, y;
 
+	/* hack: remember speed (for extra no-tele warning) */
+	p_speed = speed;
+
 	if (speed > 0) {
-		attr = TERM_L_GREEN;
+		/* Hack: Marker for sped-up buff */
+		if (speed & 0x100) {
+			speed &= ~0x100;
+			attr = TERM_L_BLUE;
+			//attr = TERM_VIOLET;
+		} else attr = TERM_L_GREEN;
 		sprintf(buf, "Fast +%d", speed);
 	} else if (speed < 0) {
 		attr = TERM_L_UMBER;
@@ -970,9 +979,6 @@ void prt_speed(int speed) {
 
 	/* restore cursor position */
 	Term_gotoxy(x, y);
-
-	/* hack: remember speed (for extra no-tele warning) */
-	p_speed = speed;
 }
 
 /*
@@ -3135,6 +3141,89 @@ void do_weather() {
 	static int cloud_movement_ticks = 0, cloud_movement_lasttick = 0;
 	bool with_clouds, outside_clouds;
 
+	bool ticks_ok = FALSE;
+
+
+/* Track 10ms ticks; Also, put experimental/testing stuff here ---------------- */
+
+	/* attempt to keep track of 'deci-ticks' (10ms resolution) */
+	if (ticks10 != weather_ticks10) {
+		weather_ticks10 = ticks10;
+		ticks_ok = TRUE;
+
+	/* --- experimental stuff --- */
+
+		/* Testing: lightning lighting via palette animation */
+		if (animate_lightning) {
+#define AL_OFFSET 16 /* palette index offset for animated colours (might need to be 0 for Windows if PALANIM_SWAP is ever used) */
+#define AL_END 12 /* duration of the lightning flash */
+#define AL_DECOUPLED /* because thunderclap happens too quickly, so decouple it from lightning animation speed */
+			static bool active = FALSE; /* Don't overwrite palette backup from overlapping lightning strikes */
+			static byte or[16], og[16], ob[16];
+#ifdef AL_DECOUPLED
+			int d;
+#endif
+			/* Animate palette */
+			if (!c_cfg.disable_lightning) switch (animate_lightning) {
+			case 1:
+				/* First thing: Backup all colours before temporarily manipulating them */
+				if (!active) {
+					for (i = 1; i < 16; i++) get_palette(i + AL_OFFSET, &or[i], &og[i], &ob[i]);
+					active = TRUE;
+				}
+
+				//set_palette(1 + AL_OFFSET, 0x99, 0x99, 0x99); //white(17)
+				set_palette(2 + AL_OFFSET, 0xCC, 0xCC, 0xFF); //slate(18)
+				set_palette(4 + AL_OFFSET, 0xFF, 0x77, 0x88); //red(20)
+				set_palette(5 + AL_OFFSET, 0x33, 0xFF, 0x33); //green(21)
+				set_palette(6 + AL_OFFSET, 0x44, 0x66, 0xFF); //blue(22)
+				set_palette(7 + AL_OFFSET, 0xAD, 0x88, 0x33); //umber(23)
+				set_palette(8 + AL_OFFSET, 0x88, 0x88, 0x88); //ldark(24)
+				set_palette(9 + AL_OFFSET, 0xEE, 0xEE, 0xEE); //lwhite(25)
+				set_palette(13 + AL_OFFSET, 0xBB, 0xFF, 0xBB); //lgreen(29)
+				set_palette(15 + AL_OFFSET, 0xF7, 0xCD, 0x85); //lumber(31)
+				set_palette(128, 0, 0, 0); //refresh
+				break;
+			case AL_END:
+				/* Restore all colours to what they were before */
+				if (active) {
+					for (i = 1; i < 16; i++) set_palette(i + AL_OFFSET, or[i], og[i], ob[i]);
+					set_palette(128, 0, 0, 0); //refresh
+					active = FALSE;
+				}
+				break;
+			default: break;
+			}
+
+			/* thunderclap follows up */
+#ifndef AL_DECOUPLED
+			if (animate_lightning == AL_END - animate_lightning_vol / ((100 + AL_END - 1) / AL_END)) {
+#else
+			d = (animate_lightning_vol >= 85) ? 100 : animate_lightning_vol + 15;
+			if (animate_lightning == 101 - d) {
+#endif
+				if (use_sound) {
+#ifndef USE_SOUND_2010
+					Term_xtra(TERM_XTRA_SOUND, s1);
+#else
+					sound(thunder_sound_idx, SFX_TYPE_WEATHER, animate_lightning_vol, 0);
+#endif
+				}
+			}
+
+			/* Continue for a couple steps */
+			animate_lightning++;
+#ifndef AL_DECOUPLED
+			if (animate_lightning == AL_END + 1) animate_lightning = 0;
+#else
+			d = AL_END > 101 - d? AL_END : 101 - d;
+			if (animate_lightning == d + 1) animate_lightning = 0;
+#endif
+		}
+	}
+
+
+/* begin ------------------------------------------------------------------- */
 
 	/* continue animating current weather (if any) */
 	if (!weather_type && !weather_elements) {
@@ -3182,7 +3271,7 @@ void do_weather() {
 					/* display raindrop */
 					Term_draw(PANEL_X + weather_element_x[i] - weather_panel_x,
 					    PANEL_Y + weather_element_y[i] - weather_panel_y,
-#if defined(EXTENDED_BG_COLOURS) && !defined(EXTENDED_COLOURS_PALANIM) /* guard against overlapping colour[16] if both (PALANIM & BG_COLOURS) are defined accidentally */
+#ifdef EXTENDED_BG_COLOURS /* use rain to test the extended background colour */
 					    rand_int(2) ? TERM2_BLUE : TERM_ORANGE, weather_wind == 0 ? '|' : (weather_wind % 2 == 1 ? '\\' : '/'));
 #else
 					    TERM_BLUE, weather_wind == 0 ? '|' : (weather_wind % 2 == 1 ? '\\' : '/'));
@@ -3243,12 +3332,15 @@ void do_weather() {
 
 /* process weather every 10ms at most -------------------------------------- */
 
+#if 0
 	/* attempt to keep track of 'deci-ticks' (10ms resolution) */
 	if (ticks10 == weather_ticks10) return;
 	weather_ticks10 = ticks10;
 	/* note: the second limit is the frame rate, cfg.fps,
 	   so if it's < 100, it will limit the speed instead. */
-
+#else
+	if (!ticks_ok) return;
+#endif
 
 /* generate new weather elements ------------------------------------------- */
 
@@ -3442,7 +3534,7 @@ void do_weather() {
 				Term_draw(PANEL_X + weather_element_x[i] - weather_panel_x,
 				    PANEL_Y + weather_element_y[i] - weather_panel_y,
 
-#if defined(EXTENDED_BG_COLOURS) && !defined(EXTENDED_COLOURS_PALANIM) /* guard against overlapping colour[16] if both (PALANIM & BG_COLOURS) are defined accidentally */
+#ifdef EXTENDED_BG_COLOURS /* use rain to test the extended background colour */
 				    rand_int(2) ? TERM2_BLUE : TERM_ORANGE, weather_wind == 0 ? '|' : (weather_wind % 2 == 1 ? '\\' : '/'));
 #else
 				    TERM_BLUE, weather_wind == 0 ? '|' : (weather_wind % 2 == 1 ? '\\' : '/'));

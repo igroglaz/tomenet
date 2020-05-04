@@ -1282,10 +1282,10 @@ static byte player_init[2][MAX_CLASS][5][3] = {
 
 	{
 		/* Archer */
+		{ TV_BOW, SV_LONG_BOW, 0 },
 		{ TV_ARROW, SV_AMMO_MAGIC, 0 },
 		{ TV_SHOT, SV_AMMO_MAGIC, 0 },
 		{ TV_BOLT, SV_AMMO_MAGIC, 0 },
-		{ TV_BOW, SV_LONG_BOW, 0 },
 		{ TV_SOFT_ARMOR, SV_LEATHER_SCALE_MAIL, 0 },
 	},
 
@@ -1312,8 +1312,8 @@ static byte player_init[2][MAX_CLASS][5][3] = {
 		{ TV_SWORD, SV_SHORT_SWORD, 0 },
 		{ TV_SOFT_ARMOR, SV_HARD_LEATHER_ARMOR, 0 },
 		{ TV_SCROLL, SV_SCROLL_MAPPING, 0 },
+		{ TV_SCROLL, SV_SCROLL_MAPPING, 0 },
 		{ TV_BOW, SV_SLING, 0 },
-		{ 255, 255, 0 },
 	},
 
 	{
@@ -1337,7 +1337,7 @@ static byte player_init[2][MAX_CLASS][5][3] = {
 		/* Runemaster */
 		{ TV_SWORD, SV_DAGGER, 0 },
 		{ TV_SOFT_ARMOR, SV_SOFT_LEATHER_ARMOR, 0 },
-		{ TV_STAFF, SV_STAFF_DETECT_ITEM, 20 },
+		{ TV_STAFF, SV_STAFF_DETECT_GOLD, 18 },
 		{ TV_DIGGING, SV_PICK, 0 },
 		{ TV_BOOMERANG, SV_BOOM_S_METAL, 0 },
 	},
@@ -1437,10 +1437,10 @@ static byte player_init[2][MAX_CLASS][5][3] = {
 
 	{
 		/* Archer */
+		{ TV_BOW, SV_LONG_BOW, 0 },//just doesn't work as fruit bat
 		{ TV_ARROW, SV_AMMO_MAGIC, 0 },
 		{ TV_SHOT, SV_AMMO_MAGIC, 0 },
 		{ TV_BOLT, SV_AMMO_MAGIC, 0 },
-		{ TV_BOW, SV_LONG_BOW, 0 },//just doesn't work as fruit bat
 		{ TV_HELM, SV_METAL_CAP, 0 },
 	},
 
@@ -1467,7 +1467,7 @@ static byte player_init[2][MAX_CLASS][5][3] = {
 		{ TV_HELM, SV_HARD_LEATHER_CAP, 0 },
 		{ TV_CLOAK, SV_CLOAK, 0 },
 		{ TV_SCROLL, SV_SCROLL_MAPPING, 0 },
-		{ 255, 255, 0 },
+		{ TV_SCROLL, SV_SCROLL_MAPPING, 0 },
 		{ 255, 255, 0 },
 	},
 
@@ -1492,7 +1492,7 @@ static byte player_init[2][MAX_CLASS][5][3] = {
 		/* Runemaster */
 		{ TV_HELM, SV_HARD_LEATHER_CAP, 0 },
 		{ TV_CLOAK, SV_CLOAK, 0 },
-		{ TV_STAFF, SV_STAFF_DETECT_ITEM, 20 },
+		{ TV_STAFF, SV_STAFF_DETECT_GOLD, 18 },
 		{ TV_DIGGING, SV_PICK, 0 },
 		{ 255, 255, 0 },
 	},
@@ -1766,7 +1766,7 @@ static void player_outfit(int Ind) {
 	/* Hack -- Give the player some water */
 	if (p_ptr->prace == RACE_ENT) {
 		invcopy(o_ptr, lookup_kind(TV_POTION, SV_POTION_WATER));
-		o_ptr->number = rand_range(3, 7);
+		o_ptr->number = rand_range(4, 6);
 		do_player_outfit();
 	}
 	/* XXX problem is that Lembas sell dear.. */
@@ -1779,14 +1779,13 @@ static void player_outfit(int Ind) {
 	/* Firestones for Dragonriders */
 	else if (p_ptr->prace == RACE_DRACONIAN) {
 		invcopy(o_ptr, lookup_kind(TV_FIRESTONE, SV_FIRE_SMALL));
-		o_ptr->number = rand_range(3, 5);
+		o_ptr->number = rand_range(3, 4);
 		do_player_outfit();
 	}
 	/* Dwarves like to collect treasures */
 	else if (p_ptr->prace == RACE_DWARF) {
-		invcopy(o_ptr, lookup_kind(TV_STAFF, SV_STAFF_DETECT_GOLD));
+		invcopy(o_ptr, lookup_kind(TV_SCROLL, SV_SCROLL_DETECT_GOLD));
 		o_ptr->number = 1;
-		o_ptr->pval = 30;
 		do_player_outfit();
 	}
 
@@ -1794,15 +1793,15 @@ static void player_outfit(int Ind) {
 	if (p_ptr->prace != RACE_VAMPIRE && p_ptr->prace != RACE_ELF && p_ptr->prace != RACE_HALF_ELF && p_ptr->prace != RACE_HIGH_ELF
 	    && p_ptr->prace != RACE_ENT) {
 		invcopy(o_ptr, lookup_kind(TV_FOOD, SV_FOOD_RATION));
-		o_ptr->number = rand_range(3, 7);
+		o_ptr->number = rand_range(4, 6);
 		do_player_outfit();
 	}
 
 	/* Hack -- Give the player some torches */
 	if (p_ptr->prace != RACE_VAMPIRE && p_ptr->pclass != CLASS_ARCHER && p_ptr->pclass != CLASS_RUNEMASTER) {
 		invcopy(o_ptr, lookup_kind(TV_LITE, SV_LITE_TORCH));
-		o_ptr->number = rand_range(3, 7);
-		o_ptr->timeout = rand_range(3, 7) * 500;
+		o_ptr->number = rand_range(4, 6);
+		o_ptr->timeout = FUEL_TORCH / 2;
 		do_player_outfit();
 	}
 
@@ -1900,6 +1899,7 @@ static void player_outfit(int Ind) {
 				} break;
 			}
 		}
+		if (tv == TV_BOW && p_ptr->prace == RACE_HOBBIT) sv = SV_SLING;
 
 		/* If someone uses too low STR/DEX values, "downgrade"
 		   his starter weapon to a lighter version to ensure at least 2 bpr. */
@@ -2037,6 +2037,9 @@ static void player_outfit(int Ind) {
 				}
 #endif
 
+				if (tv == TV_STAFF) /* Treasure Detection */
+					o_ptr->pval = 17 + rand_int(4); /* average is same as in charge_staff() */
+
 				do_player_outfit();
 			}
 		}
@@ -2049,10 +2052,11 @@ static void player_outfit(int Ind) {
 			invcopy(o_ptr, lookup_kind(TV_LITE, SV_LITE_LANTERN));
 			o_ptr->number = 1;
 			o_ptr->discount = 100;
-			o_ptr->name2 = 139;
+			o_ptr->name2 = EGO_LBRIGHTNESS;
 			apply_magic(&p_ptr->wpos, o_ptr, -1, FALSE, FALSE, FALSE, FALSE, RESF_NONE);
 			object_flags(o_ptr, &f1, &f2, &f3, &f4, &f5, &f6, &esp);
-		} while (f2 & TR2_RES_DARK);
+		} while (f2 & TR2_RES_DARK); /* Don't give a high resistance, too much */
+		o_ptr->timeout = FUEL_LAMP / 2 - rand_int(FUEL_LAMP / 10);
 		do_player_outfit();
 
 		invcopy(o_ptr, lookup_kind(TV_FLASK, SV_FLASK_OIL));
@@ -2064,11 +2068,11 @@ static void player_outfit(int Ind) {
 	if (p_ptr->pclass == CLASS_RUNEMASTER) {
 		invcopy(o_ptr, lookup_kind(TV_LITE, SV_LITE_LANTERN));
 		o_ptr->number = 1;
-		o_ptr->timeout = rand_range(3, 7) * 500;
+		o_ptr->timeout = FUEL_LAMP / 2 - rand_int(FUEL_LAMP / 10);
 		do_player_outfit();
 
 		invcopy(o_ptr, lookup_kind(TV_FLASK, SV_FLASK_OIL));
-		o_ptr->number = rand_range(3, 7);
+		o_ptr->number = rand_range(4, 6);
 		do_player_outfit();
 	}
 
@@ -2116,17 +2120,17 @@ static void player_outfit(int Ind) {
 	o_ptr->discount = 100;
 	do_player_outfit();
 /* replacing phase scrolls with more $. Stacking issues annoy me. -Molt */
-#if 0
+ #if 0
 	invcopy(o_ptr, lookup_kind(TV_SCROLL, SV_SCROLL_PHASE_DOOR));
 	o_ptr->number = (p_ptr->pclass == CLASS_ARCHER) ? 10 : 5;
 	o_ptr->discount = 100;
 	do_player_outfit();
-#else
+ #else
 	if (p_ptr->pclass == CLASS_ARCHER)
 	p_ptr->au += 100;
 	else
 	p_ptr->au += 50;
-#endif
+ #endif
 #endif
 
 	/* Hack -- Give the player newbie guide Parchment */
@@ -2298,6 +2302,10 @@ static void player_setup(int Ind, bool new) {
 			   after an auto-recall, caused by a previous panic save. */
 			p_ptr->auto_transport = AT_BLINK;
 #endif
+			wpos->wz = 0;
+			/* Don't always start in top left corner */
+			p_ptr->py = rand_int(MAX_WID - 4) + 2;
+			p_ptr->px = rand_int(MAX_HGT - 4) + 2;
 		}
 #endif
 		/* Avoid critical border spots which might lead to segfaults.. (don't ask) */
@@ -2307,6 +2315,10 @@ static void player_setup(int Ind, bool new) {
 		if (p_ptr->py > MAX_HGT - 2) p_ptr->py = MAX_HGT - 2;
 		p_ptr->panic = FALSE;
 	}
+
+	p_ptr->wpos.wx = wpos->wx;
+	p_ptr->wpos.wy = wpos->wy;
+	p_ptr->wpos.wz = wpos->wz;
 
 #ifndef VAMPIRIC_MIST
 	if (p_ptr->prace == RACE_VAMPIRE && p_ptr->body_monster == RI_VAMPIRIC_MIST)
@@ -2384,9 +2396,9 @@ static void player_setup(int Ind, bool new) {
 
 			alloc_dungeon_level(wpos);
 			/* hack: Prevent generating a random dungeon town via relogging+unstaticing cheeze */
-			p_ptr->temp_misc_2 |= 0x02;
+			p_ptr->temp_misc_1 |= 0x10;
 			generate_cave(wpos, p_ptr);
-			p_ptr->temp_misc_2 &= ~0x02;
+			p_ptr->temp_misc_1 &= ~0x10;
 			l_ptr = getfloor(wpos);
 
 			/* Player now starts mapping this dungeon (as far as its flags allow) */
@@ -2626,9 +2638,44 @@ static void player_setup(int Ind, bool new) {
 	if (!lookup_player_name(p_ptr->id)) {
 		byte w;
 		time_t ttime;
-		/* Add */
+
+		int *id_list, ids, max_order = 0, order;
+#if 1
+		int j, max_cpa = MAX_CHARS_PER_ACCOUNT;
+#endif
+
+		/* Prepare to add the new character to the database */
 		w = (p_ptr->total_winner ? 1 : 0) + (p_ptr->once_winner ? 2 : 0) + (p_ptr->iron_winner ? 4 : 0) + (p_ptr->iron_winner_ded ? 8 : 0);
-		add_player_name(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, 1, 1, 0, 0, 0, 0, time(&ttime), p_ptr->admin_dm ? 1 : (p_ptr->admin_wiz ? 2 : 0), *wpos, p_ptr->houses_owned, w);
+		/* For custom character ordering in account overview screen: Add him to the bottom of the character list: */
+		ids = player_id_list(&id_list, p_ptr->account);
+#if 0 /* Just always add him to the bottom */
+		for (i = 0; i < ids; i++) {
+			order = lookup_player_order(id_list[i]);
+			/* Append to bottom.. */
+			if (order > max_order) max_order = order;
+		}
+		max_order++; /* Add the new character below all others in this account's character list  */
+#else /* If there is a hole in the order, insert him there. Otherwise add him to the bottom. */
+ #ifdef ALLOW_DED_IDDC_MODE
+		max_cpa += MAX_DED_IDDC_CHARS;
+ #endif
+ #ifdef ALLOW_DED_PVP_MODE
+		max_cpa += MAX_DED_PVP_CHARS;
+ #endif
+		for (j = 1; j <= max_cpa; j++) {
+			for (i = 0; i < ids; i++) {
+				order = lookup_player_order(id_list[i]);
+				if (order == j) break;
+			}
+			if (i != ids) continue;
+			/* Insert at hole / append at bottom of the list if no hole.. */
+			max_order = j;
+			break;
+		}
+#endif
+		if (ids) C_KILL(id_list, ids, int);
+		/* Add the new character to the daabase */
+		add_player_name(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, 1, 1, 0, 0, 0, 0, time(&ttime), p_ptr->admin_dm ? 1 : (p_ptr->admin_wiz ? 2 : 0), *wpos, p_ptr->houses_owned, w, max_order);
 	} else {
 	/* Verify his data - only needed for 4.2.0 -> 4.2.2 savegame conversion :) - C. Blue */
 	/* Now also needed for 4.5.2 -> 4.5.3 again ^^ To stamp guild info into hash table, for self-adding */
@@ -2637,7 +2684,7 @@ static void player_setup(int Ind, bool new) {
 		byte w;
 		/* Verify mode */
 		w = (p_ptr->total_winner ? 1 : 0) + (p_ptr->once_winner ? 2 : 0) + (p_ptr->iron_winner ? 4 : 0) + (p_ptr->iron_winner_ded ? 8 : 0);
-		verify_player(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, p_ptr->lev, p_ptr->party, p_ptr->guild, p_ptr->guild_flags, 0, time(&ttime), p_ptr->admin_dm ? 1 : (p_ptr->admin_wiz ? 2 : 0), *wpos, (char)p_ptr->houses_owned, w);
+		verify_player(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, p_ptr->lev, p_ptr->party, p_ptr->guild, p_ptr->guild_flags, 0, time(&ttime), p_ptr->admin_dm ? 1 : (p_ptr->admin_wiz ? 2 : 0), *wpos, (char)p_ptr->houses_owned, w, 100);
 	}
 
 	/* Set his "current activities" variables */

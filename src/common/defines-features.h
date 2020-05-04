@@ -179,18 +179,18 @@
    Same for servers. */
 #define EXTENDED_TERM_COLOURS
 
-/* (EXPERIMENTAL) Add another set of 16 colours to the normal 16 colours the game uses,
+/* Add another set of 16 colours to the normal 16 colours the game uses,
    which are clones of those, but are only used for drawing the main (map_info aka game) screen.
    Purpose: Allow for palette animation, intended for smooth day/night lighting changes. - C. Blue
    Note: This changes TERM_BNW and TERM_PVP to be normal animated colours instead of masks,
-         because otherwise there would not be enough colours available to accomodate for this addition! */
+         because otherwise there would not be enough colours available to accomodate for this addition.
+   NOTE: Due to the hilite_player comeback this must always be on for server >= 4.7.3.0.0.0 or it breaks old clients. */
 #define EXTENDED_COLOURS_PALANIM
 
 /* Special extended colours that make use of background colouring - C. Blue
    Note: This is highly EXPERIMENTAL and not even implemented atm.,
          the only thing that works is proof of concept code that displays
-         rain in alternating colours, TERM_ORANGE and (newly added for this) TERM2_BLUE.
-   Currently has NO EFFECT if EXTENDED_COLOURS_PALANIM is enabled at the same time! */
+         rain in alternating colours, TERM_ORANGE and (newly added for this) TERM2_BLUE. */
 //#define EXTENDED_BG_COLOURS
 
 /* better chance for non-low +hit,+dam on randart melee weapons and boomerangs */
@@ -333,6 +333,7 @@
 
 /* --------------------- Server-type dependant features -------------------- */
 
+/* Specific settings for rpg-server ("ironman server") only */
 #ifdef RPG_SERVER
  /* Do we want to use Kurzel's PvE/P when mode 1 PK is configured? */
 //#define KURZEL_PK --disabled because it breaks chat highlighting
@@ -345,8 +346,11 @@
  #define AUCTION_DEBUG
 
  #define OPTIMIZED_ANIMATIONS	/* testing */
+
+ #define ENABLE_EXCAVATION	/* TESTING/EXPERIMENTAL - Allow creation of demolition charges for 'Digging'-renamed-to-'Excavation' skill */
 #endif
 
+/* Specific settings for test-server only */
 #ifdef TEST_SERVER
  #define NEW_REMOVE_CURSE	/* rc has fail chance; allow projecting rc spell on others */
 
@@ -370,6 +374,14 @@
  #define ENABLE_EXCAVATION	/* Allow creation of demolition charges for 'Digging'-renamed-to-'Excavation' skill */
 #endif
 
+/* Specific settings for main-server only */
+#if !defined(RPG_SERVER) && !defined(TEST_SERVER)
+ #define ENABLE_EXCAVATION	/* TESTING/EXPERIMENTAL - Allow creation of demolition charges for 'Digging'-renamed-to-'Excavation' skill */
+ #ifdef ENABLE_EXCAVATION
+  #define EXCAVATION_IDDC_ONLY	/* Restrict finding ENABLE_EXCAVATION items to within the IDDC. Usage of found items is not restricted however. */
+ #endif
+#endif
+
 #ifdef ARCADE_SERVER
 #endif
 
@@ -389,7 +401,8 @@
  #define DISTINCT_DARK
 
  /* Remove some hard-coding in the client options */
- #define CO_BIGMAP	7
+ #define CO_BIGMAP		7
+ #define CO_PALETTE_ANIMATION	124
 
  /* Blacken lower part of screen if we're mindlinked to a non-bigmap-target but
     are actually using bigmap-screen. */

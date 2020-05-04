@@ -32,6 +32,8 @@
 static void do_slash_brief_help(int Ind);
 char pet_creation(int Ind);
 //static int lInd = 0;
+
+
 #ifdef NOTYET	/* new idea */
 
 struct scmd{
@@ -237,7 +239,7 @@ void sc_report(int Ind, void *string){
 	msg_print(Ind, "\377GThank you for sending us a message!");
 }
 
-#else
+#else /* NOTYET */
 
 /*
  * Litterally.	- Jir -
@@ -303,11 +305,11 @@ static void do_cmd_refresh(int Ind) {
  * D:/lua (LUA script command)
  */
 
-void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
+void do_slash_cmd(int Ind, char *message, char *message_u) {
 	int i = 0, j = 0, h = 0;
 	int k = 0, tk = 0;
 	player_type *p_ptr = Players[Ind];
- 	char *colon, *token[9], message2[MAX_SLASH_LINE_LEN], message3[MAX_SLASH_LINE_LEN];
+	char *colon, *token[9], message2[MAX_SLASH_LINE_LEN], message3[MAX_SLASH_LINE_LEN];
 	char message4[MAX_SLASH_LINE_LEN], messagelc[MAX_SLASH_LINE_LEN];
 
 	worldpos wp;
@@ -317,33 +319,44 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 	bool admin = TRUE;
 #endif
 
+	char *colon_u, message2_u[MAX_SLASH_LINE_LEN], message3_u[MAX_SLASH_LINE_LEN];
+	bool censor = p_ptr->censor_swearing;
+
+
 	/* prevent overflow - bad hack for now (needed as you can now enter lines MUCH longer than 140 chars) */
 	message[MAX_SLASH_LINE_LEN - 1] = 0;
+	message_u[MAX_SLASH_LINE_LEN - 1] = 0;
 
 	strcpy(message2, message);
+	strcpy(message2_u, message_u);
+
 	wpcopy(&wp, &p_ptr->wpos);
 
 	/* message3 contains all tokens but not the command: */
 	strcpy(message3, "");
+	strcpy(message3_u, "");
 	for (i = 0; i < (int)strlen(message); i++)
 		if (message[i] == ' ') {
 			strcpy(message3, message + i + 1);
+			strcpy(message3_u, message_u + i + 1);
 			break;
 		}
 
 	/* Look for a player's name followed by a colon */
 	colon = strchr(message, ' ');
+	colon_u = strchr(message_u, ' ');
 
 	strcpy(messagelc, message);
 	i = 0;
 	while (messagelc[++i]) messagelc[i] = tolower(messagelc[i]);
 
+
 	/* hack -- non-token ones first */
-	if ((prefix(messagelc, "/script") ||
-//	    prefix(messagelc, "/scr") || used for /scream now
+	if ((prefix(messagelc, "/script ") ||
+	    //prefix(messagelc, "/scr") || used for /scream now
 	    prefix(messagelc, "/ ") ||	// use with care!
 	    prefix(messagelc, "//") ||	// use with care!
-	    prefix(messagelc, "/lua")) && admin) {
+	    prefix(messagelc, "/lua ")) && admin) {
 		if (colon)
 			master_script_exec(Ind, colon);
 		else
@@ -353,40 +366,37 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 	}
 	else if ((prefix(messagelc, "/rfe")) || prefix(messagelc, "/cookie")) {
 		if (colon) {
-#if 0 /* kinda spammy */
-			/* send RFEs to chat for everyone to bounce ideas */
-			if (!admin_p(Ind)) msg_broadcast_format(0, "\374\377s[\377wRFE\377s:\377w%s\377s]%s", p_ptr->name, colon);
-#endif
-			rfe_printf("RFE [%s]%s\n", p_ptr->accountname, colon);
+			rfe_printf("RFE [%s]%s\n", p_ptr->accountname, colon_u); //'>_>
 			msg_print(Ind, "\377GThank you for sending us a message!");
 		} else msg_print(Ind, "\377oUsage: /rfe <message>");
 		return;
 	}
 	else if (prefix(messagelc, "/bug")) {
 		if (colon) {
-			rfe_printf("BUG [%s]%s\n", p_ptr->accountname, colon);
+			rfe_printf("BUG [%s]%s\n", p_ptr->accountname, colon_u);
 			msg_print(Ind, "\377GThank you for sending us a message!");
 		} else msg_print(Ind, "\377oUsage: /bug <message>");
 		return;
 	}
 	/* Oops conflict; took 'never duplicate' principal */
 	else if (prefix(messagelc, "/cough")) {
-//	/count	    || prefix(messagelc, "/cou"))
+	    /// count || prefix(messagelc, "/cou"))
 		break_cloaking(Ind, 4);
 		msg_format_near(Ind, "\374\377%c%^s coughs noisily.", COLOUR_CHAT, p_ptr->name);
 		msg_format(Ind, "\374\377%cYou cough noisily..", COLOUR_CHAT);
 		wakeup_monsters_somewhat(Ind, -1);
 		return;
 	}
-	else if (prefix(messagelc, "/shout") || prefix(messagelc, "/sho") || prefix(messagelc, "/yell")) {
+	else if (prefix(messagelc, "/shout") || (prefix(messagelc, "/sho") && !prefix(messagelc, "/show")) || prefix(messagelc, "/yell")) {
 		break_cloaking(Ind, 4);
-		if (colon && *(colon++)) {
+		if (colon++) {
+			colon_u++;
 			if (prefix(messagelc, "/yell")) {
-				msg_format_near(Ind, "\374\377%c%^s yells: %s", COLOUR_CHAT, p_ptr->name, colon);
-				msg_format(Ind, "\374\377%cYou yell: %s", COLOUR_CHAT, colon);
+				msg_print_near2(Ind, format("\374\377%c%^s yells: %s", COLOUR_CHAT, p_ptr->name, colon), format("\374\377%c%^s yells: %s", COLOUR_CHAT, p_ptr->name, colon_u));
+				msg_format(Ind, "\374\377%cYou yell: %s", COLOUR_CHAT, censor ? colon : colon_u);
 			} else {
-				msg_format_near(Ind, "\374\377%c%^s shouts: %s", COLOUR_CHAT, p_ptr->name, colon);
-				msg_format(Ind, "\374\377%cYou shout: %s", COLOUR_CHAT, colon);
+				msg_print_near2(Ind, format("\374\377%c%^s shouts: %s", COLOUR_CHAT, p_ptr->name, colon), format("\374\377%c%^s shouts: %s", COLOUR_CHAT, p_ptr->name, colon_u));
+				msg_format(Ind, "\374\377%cYou shout: %s", COLOUR_CHAT, censor ? colon : colon_u);
 			}
 		} else {
 			if (prefix(messagelc, "/yell")) {
@@ -403,8 +413,9 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 	else if (prefix(messagelc, "/scream") || prefix(messagelc, "/scr")) {
 		break_cloaking(Ind, 6);
 		if (colon++) {
-			msg_format_near(Ind, "\374\377%c%^s screams: %s", COLOUR_CHAT, p_ptr->name, colon);
-			msg_format(Ind, "\374\377%cYou scream: %s", COLOUR_CHAT, colon);
+			colon_u++;
+			msg_print_near2(Ind, format("\374\377%c%^s screams: %s", COLOUR_CHAT, p_ptr->name, colon), format("\374\377%c%^s screams: %s", COLOUR_CHAT, p_ptr->name, colon_u));
+			msg_format(Ind, "\374\377%cYou scream: %s", COLOUR_CHAT, censor ? colon : colon_u);
 		} else {
 			msg_format_near(Ind, "\374\377%cYou hear %s scream!", COLOUR_CHAT, p_ptr->name);
 			msg_format(Ind, "\374\377%cYou scream!", COLOUR_CHAT);
@@ -420,21 +431,23 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 			msg_print(Ind, "What do you want to do?");
 			return;
 		}
+		colon_u++;
 		/* check for genitivum */
 		if (prefix(messagelc, "/sayme'") || prefix(messagelc, "/sme'")) {
-			msg_format_near(Ind, "\374\377%c[%^s%s]", COLOUR_CHAT, p_ptr->name, strchr(message, '\''));
-			msg_format(Ind, "\374\377%c[%^s%s]", COLOUR_CHAT, p_ptr->name, strchr(message, '\''));
+			msg_print_near2(Ind, format("\374\377%c[%^s%s]", COLOUR_CHAT, p_ptr->name, strchr(message, '\'')), format("\374\377%c[%^s%s]", COLOUR_CHAT, p_ptr->name, strchr(message_u, '\'')));
+			msg_format(Ind, "\374\377%c[%^s%s]", COLOUR_CHAT, p_ptr->name, censor ? strchr(message, '\'') : strchr(message_u, '\''));
 			return;
 		}
-		msg_format_near(Ind, "\374\377%c[%^s %s]", COLOUR_CHAT, p_ptr->name, colon);
-		msg_format(Ind, "\374\377%c[%^s %s]", COLOUR_CHAT, p_ptr->name, colon);
+		msg_print_near2(Ind, format("\374\377%c[%^s %s]", COLOUR_CHAT, p_ptr->name, colon), format("\374\377%c[%^s %s]", COLOUR_CHAT, p_ptr->name, colon_u));
+		msg_format(Ind, "\374\377%c[%^s %s]", COLOUR_CHAT, p_ptr->name, censor ? colon : colon_u);
 		return;
 // :)		break_cloaking(Ind, 3);
 	}
 	else if (prefix(messagelc, "/say") || (prefix(messagelc, "/s ") || !strcmp(message, "/s"))) {
 		if (colon++) {
-			msg_format_near(Ind, "\374\377%c%^s says: %s", COLOUR_CHAT, p_ptr->name, colon);
-			msg_format(Ind, "\374\377%cYou say: %s", COLOUR_CHAT, colon);
+			colon_u++;
+			msg_print_near2(Ind, format("\374\377%c%^s says: %s", COLOUR_CHAT, p_ptr->name, colon), format("\374\377%c%^s says: %s", COLOUR_CHAT, p_ptr->name, colon_u));
+			msg_format(Ind, "\374\377%cYou say: %s", COLOUR_CHAT, censor ? colon : colon_u);
 		} else {
 			msg_format_near(Ind, "\374\377%c%s clears %s throat.", COLOUR_CHAT, p_ptr->name, p_ptr->male ? "his" : "her");
 			msg_format(Ind, "\374\377%cYou clear your throat.", COLOUR_CHAT);
@@ -444,8 +457,9 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 	}
 	else if (prefix(messagelc, "/whisper") || (prefix(messagelc, "/wh") && !prefix(messagelc, "/who"))) {
 		if (colon++) {
-			msg_format_verynear(Ind, "\374\377%c%^s whispers: %s", COLOUR_CHAT, p_ptr->name, colon);
-			msg_format(Ind, "\374\377%cYou whisper: %s", COLOUR_CHAT, colon);
+			colon_u++;
+			msg_print_verynear2(Ind, format("\374\377%c%^s whispers: %s", COLOUR_CHAT, p_ptr->name, colon), format("\374\377%c%^s whispers: %s", COLOUR_CHAT, p_ptr->name, colon_u));
+			msg_format(Ind, "\374\377%cYou whisper: %s", COLOUR_CHAT, censor ? colon : colon_u);
 		} else
 			msg_print(Ind, "What do you want to whisper?");
 		return;
@@ -1113,7 +1127,6 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 		}
 		/* Display extra information */
 		else if (prefix(messagelc, "/extra") ||
-		    prefix(messagelc, "/examine") ||
 		    (prefix(messagelc, "/ex") && !prefix(messagelc, "/exit"))) {
 			do_cmd_check_extra_info(Ind, (admin && !tk));
 			return;
@@ -2061,9 +2074,12 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				}
 			}
 
-			if (!p_ptr->cards_diamonds && !p_ptr->cards_hearts && !p_ptr->cards_spades && !p_ptr->cards_clubs) {
+			if (!k) {
 				msg_format(Ind, "\377%cThat was the final card of your stack of cards.", COLOUR_GAMBLE);
 				msg_format_near(Ind, "\377%cThat was the final card of the stack of cards.", COLOUR_GAMBLE);
+			} else if (k == 1) {
+				msg_format(Ind, "\377%cThere is only one card remaining of your stack of cards.", COLOUR_GAMBLE);
+				msg_format_near(Ind, "\377%cThere is only one card remaining of the stack of cards.", COLOUR_GAMBLE);
 			}
 #endif
 #ifdef USE_SOUND_2010
@@ -2137,7 +2153,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				for (i = 0; i < MAX_PARTYNOTES; i++) {
 					if (!strcmp(party_note_target[i], parties[p_ptr->party].name)) {
 						if (strcmp(party_note[i], "")) {
-							msg_format(Ind, "\377bParty Note: %s", party_note[i]);
+							msg_format(Ind, "\377bParty Note: \377%c%s", COLOUR_CHAT_PARTY, censor ? party_note[i] : party_note_u[i]);
 							found_note = TRUE;
 						}
 						break;
@@ -2152,7 +2168,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 					if (message2[i] == ' ')
 						for (j = i; j < (int)strlen(message2); j++)
 							if (message2[j] != ' ')	{
-								/* save start pos in j for latter use */
+								/* hack: save start pos in j for latter use */
 								i = strlen(message2);
 								break;
 							}
@@ -2167,12 +2183,16 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 
 				/* Limit */
 				message2[j + MAX_CHARS_WIDE - 1] = '\0';
+				message2_u[j + MAX_CHARS_WIDE - 1] = '\0';
 
 				if (i < MAX_PARTYNOTES) {
 					/* change existing party note to new text */
 					strcpy(party_note[i], &message2[j]);
-//					msg_print(Ind, "\377yNote has been stored.");
-					msg_party_format(Ind, "\377b%s changed party note to: %s", p_ptr->name, party_note[i]);
+					strcpy(party_note_u[i], &message2_u[j]);
+					//msg_print(Ind, "\377yNote has been stored.");
+					msg_party_print(Ind,
+					    format("\377b%s changed party note to: \377%c%s", p_ptr->name, COLOUR_CHAT_PARTY, party_note[i]),
+					    format("\377b%s changed party note to: \377%c%s", p_ptr->name, COLOUR_CHAT_PARTY, party_note_u[i]));
 					return;
 				}
 
@@ -2189,8 +2209,11 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				}
 				strcpy(party_note_target[i], parties[p_ptr->party].name);
 				strcpy(party_note[i], &message2[j]);
-//				msg_print(Ind, "\377yNote has been stored.");
-				msg_party_format(Ind, "\377b%s set party note to: %s", p_ptr->name, party_note[i]);
+				strcpy(party_note_u[i], &message2_u[j]);
+				//msg_print(Ind, "\377yNote has been stored.");
+				msg_party_print(Ind,
+				    format("\377b%s set party note to: \377%c%s", p_ptr->name, COLOUR_CHAT_PARTY, party_note[i]),
+				    format("\377b%s set party note to: \377%c%s", p_ptr->name, COLOUR_CHAT_PARTY, party_note_u[i]));
 				return;
 			}
 		}
@@ -2219,7 +2242,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 						break;
 					}
 				}
-//				msg_print(Ind, "\377oGuild note has been erased.");
+				//msg_print(Ind, "\377oGuild note has been erased.");
 				msg_guild_format(Ind, "\377b%s erased the guild note.", p_ptr->name);
 				return;
 			}
@@ -2229,7 +2252,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				for (i = 0; i < MAX_GUILDNOTES; i++) {
 					if (!strcmp(guild_note_target[i], guilds[p_ptr->guild].name)) {
 						if (strcmp(guild_note[i], "")) {
-							msg_format(Ind, "\377bGuild Note: %s", guild_note[i]);
+							msg_format(Ind, "\377bGuild Note: \377%c%s", COLOUR_CHAT_GUILD, censor ? guild_note[i] : guild_note_u[i]);
 							found_note = TRUE;
 						}
 						break;
@@ -2244,7 +2267,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 					if (message2[i] == ' ')
 						for (j = i; j < (int)strlen(message2); j++)
 							if (message2[j] != ' ')	{
-								/* save start pos in j for latter use */
+								/* hack: save start pos in j for latter use */
 								i = strlen(message2);
 								break;
 							}
@@ -2260,8 +2283,11 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 					/* change existing guild note to new text */
 					message2[j + MAX_CHARS_WIDE - 1] = '\0'; /* Limit */
 					strcpy(guild_note[i], &message2[j]);
-//					msg_print(Ind, "\377yNote has been stored.");
-					msg_guild_format(Ind, "\377b%s changed the guild note to: %s", p_ptr->name, guild_note[i]);
+					strcpy(guild_note_u[i], &message2_u[j]);
+					//msg_print(Ind, "\377yNote has been stored.");
+					msg_guild_print(Ind,
+					    format("\377b%s changed the guild note to: \377%c%s", p_ptr->name, COLOUR_CHAT_GUILD, guild_note[i]),
+					    format("\377b%s changed the guild note to: \377%c%s", p_ptr->name, COLOUR_CHAT_GUILD, guild_note_u[i]));
 					return;
 				}
 
@@ -2278,8 +2304,11 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				}
 				strcpy(guild_note_target[i], guilds[p_ptr->guild].name);
 				strcpy(guild_note[i], &message2[j]);
-//				msg_print(Ind, "\377yNote has been stored.");
-				msg_guild_format(Ind, "\377b%s set the guild note to: %s", p_ptr->name, guild_note[i]);
+				strcpy(guild_note_u[i], &message2_u[j]);
+				//msg_print(Ind, "\377yNote has been stored.");
+				msg_guild_print(Ind,
+				    format("\377b%s set the guild note to: \377%c%s", p_ptr->name, COLOUR_CHAT_GUILD, guild_note[i]),
+				    format("\377b%s set the guild note to: \377%c%s", p_ptr->name, COLOUR_CHAT_GUILD, guild_note_u[i]));
 				return;
 			}
 		}
@@ -2314,7 +2343,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				if (!strcmp(priv_note_sender[i], p_ptr->name) ||
 				    !strcmp(priv_note_sender[i], p_ptr->accountname)) {
 					/* found a matching note */
-					msg_format(Ind, "\377oTo %s: %s", priv_note_target[i], priv_note[i]);
+					msg_format(Ind, "\377oTo %s: %s", priv_note_target[i], censor ? priv_note[i] : priv_note_u[i]);
 				}
 			}
 			return;
@@ -2502,13 +2531,15 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				    q_ptr->paging == 0)
 					q_ptr->paging = 1;
 
-				msg_format(i, "\374\377RNote from %s: %s", p_ptr->name, message2 + j + 1);
-//				return; //so double-msg him just to be safe he sees it
+				tpname = strchr(message2_u, ':'); //abuse tpname; note that this care is paranoia, because it's certain at this point that message2_u has a ':' in it
+				msg_format(i, "\374\377RNote from %s: %s", p_ptr->name, censor ? message2 + j + 1 : (tpname ? tpname + 1: message2 + j + 1));
+				//return; //so double-msg him just to be safe he sees it
 			}
 
 			strcpy(priv_note_sender[found_note], p_ptr->accountname);
 			strcpy(priv_note_target[found_note], tname);
 			strcpy(priv_note[found_note], message2 + j + 1);
+			strcpy(priv_note_u[found_note], tpname ? tpname + 1 : message2 + j + 1);
 			msg_format(Ind, "\377yNote for account '%s' has been stored.", priv_note_target[found_note]);
 			return;
 		}
@@ -2766,7 +2797,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				msg_print(Ind, "\377sBulletin board (type '/bbs <text>' in chat to write something):");
 				for (i = 0; i < BBS_LINES; i++)
 					if (strcmp(bbs_line[i], "")) {
-						msg_format(Ind, "\377s %s", bbs_line[i]);
+						msg_format(Ind, "\377s %s", censor ? bbs_line[i] : bbs_line_u[i]);
 						bbs_empty = FALSE;
 					}
 				if (bbs_empty) msg_print(Ind, "\377s <nothing has been written on the board so far>");
@@ -2786,9 +2817,8 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 			else if (p_ptr->mode & MODE_PVP) a = COLOUR_MODE_PVP;
 			else a = 's';
 
-			msg_broadcast_format(0, "\374\377s[\377%c%s\377s->BBS]\377W %s", a, p_ptr->name, message3);
-			//bbs_add_line(format("%s %s: %s",showtime() + 7, p_ptr->name, message3));
-			bbs_add_line(format("\377s%s \377%c%s\377s:\377W %s",showdate(), a, p_ptr->name, message3));
+			msg_broadcast2(0, format("\374\377s[\377%c%s\377s->BBS]\377W %s", a, p_ptr->name, message3), format("\374\377s[\377%c%s\377s->BBS]\377W %s", a, p_ptr->name, message3_u));
+			bbs_add_line(format("\377s%s \377%c%s\377s:\377W %s", showdate(), a, p_ptr->name, message3), format("\377s%s \377%c%s\377s:\377W %s",showdate(), a, p_ptr->name, message3_u));
 			return;
 		}
 		else if (prefix(messagelc, "/stime")) { /* show time / date */
@@ -3179,17 +3209,17 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 
 			if (tk) {
 				/* write something */
-				msg_party_format(Ind, "\374\377B[%s->PBBS]\377W %s", p_ptr->name, message3);
-				pbbs_add_line(p_ptr->party, format("\377B%s %s:\377W %s",showdate(), p_ptr->name, message3));
+				msg_party_format(Ind, format("\374\377%c[%s->PBBS]\377W %s", COLOUR_CHAT_PARTY, p_ptr->name, message3), format("\374\377%c[%s->PBBS]\377W %s", COLOUR_CHAT_PARTY, p_ptr->name, message3_u));
+				pbbs_add_line(p_ptr->party, format("\377%c%s %s:\377W %s", COLOUR_CHAT_PARTY, showdate(), p_ptr->name, message3), format("\377%c%s %s:\377W %s", COLOUR_CHAT_PARTY, showdate(), p_ptr->name, message3_u));
 				return;
 			}
-			msg_print(Ind, "\377BParty bulletin board (type '/pbbs <text>' in chat to write something):");
+			msg_format(Ind, "\377%cParty bulletin board (type '/pbbs <text>' in chat to write something):", COLOUR_CHAT_PARTY);
 			for (n = 0; n < BBS_LINES; n++)
 				if (strcmp(pbbs_line[p_ptr->party][n], "")) {
-					msg_format(Ind, "\377B %s", pbbs_line[p_ptr->party][n]);
+					msg_format(Ind, "\377%c %s", COLOUR_CHAT_PARTY, censor ? pbbs_line[p_ptr->party][n] : pbbs_line_u[p_ptr->party][n]);
 					bbs_empty = FALSE;
 				}
-			if (bbs_empty) msg_print(Ind, "\377B <nothing has been written on the party board so far>");
+			if (bbs_empty) msg_format(Ind, "\377%c <nothing has been written on the party board so far>", COLOUR_CHAT_PARTY);
 			return;
 		}
 		else if (prefix(messagelc, "/gbbs")) {
@@ -3207,14 +3237,14 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 
 			if (tk) {
 				/* write something */
-				msg_guild_format(Ind, "\374\377%c[%s->GBBS]\377W %s", COLOUR_CHAT_GUILD, p_ptr->name, message3);
-				gbbs_add_line(p_ptr->guild, format("\377%c%s %s:\377W %s", COLOUR_CHAT_GUILD, showdate(), p_ptr->name, message3));
+				msg_guild_print(Ind, format("\374\377%c[%s->GBBS]\377W %s", COLOUR_CHAT_GUILD, p_ptr->name, message3), format("\374\377%c[%s->GBBS]\377W %s", COLOUR_CHAT_GUILD, p_ptr->name, message3_u));
+				gbbs_add_line(p_ptr->guild, format("\377%c%s %s:\377W %s", COLOUR_CHAT_GUILD, showdate(), p_ptr->name, message3), format("\377%c%s %s:\377W %s", COLOUR_CHAT_GUILD, showdate(), p_ptr->name, message3_u));
 				return;
 			}
 			msg_format(Ind, "\377%cGuild bulletin board (type '/gbbs <text>' in chat to write something):", COLOUR_CHAT_GUILD);
 			for (n = 0; n < BBS_LINES; n++)
 				if (strcmp(gbbs_line[p_ptr->guild][n], "")) {
-					msg_format(Ind, "\377%c %s", COLOUR_CHAT_GUILD, gbbs_line[p_ptr->guild][n]);
+					msg_format(Ind, "\377%c %s", COLOUR_CHAT_GUILD, censor ? gbbs_line[p_ptr->guild][n] : gbbs_line_u[p_ptr->guild][n]);
 					bbs_empty = FALSE;
 				}
 			if (bbs_empty) msg_format(Ind, "\377%c <nothing has been written on the guild board so far>", COLOUR_CHAT_GUILD);
@@ -3359,8 +3389,8 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 			}
 
 			//unsnow
-			if (Players[j]->temp_misc_2 & 0x01) {
-				Players[j]->temp_misc_2 &= ~0x01;
+			if (Players[j]->temp_misc_1 & 0x08) {
+				Players[j]->temp_misc_1 &= ~0x08;
 				note_spot(j, Players[j]->py, Players[j]->px);
 				update_player(j); //may return to being invisible
 				everyone_lite_spot(&Players[j]->wpos, Players[j]->py, Players[j]->px);
@@ -3890,7 +3920,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 					p_ptr->mode |= MODE_DED_PVP;
 					msg_print(Ind, "\377BYour character has been converted to a slot-exclusive PvP-character!");
 					w = (p_ptr->total_winner ? 1 : 0) + (p_ptr->once_winner ? 2 : 0) + (p_ptr->iron_winner ? 4 : 0) + (p_ptr->iron_winner_ded ? 8 : 0);
-					verify_player(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, p_ptr->lev, 0, 0, 0, 0, 0, 0, p_ptr->wpos, p_ptr->houses_owned, w);//assume NO ADMIN!
+					verify_player(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, p_ptr->lev, 0, 0, 0, 0, 0, 0, p_ptr->wpos, p_ptr->houses_owned, w, 100);//assume NO ADMIN!
 					//Destroy_connection(Players[Ind]->conn, "Success -- You need to login again to complete the process!");
 					return;
 				}
@@ -3900,7 +3930,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				p_ptr->mode |= MODE_DED_PVP;
 				msg_print(Ind, "\377BYour character has been converted to a slot-exclusive PvP-character!");
 				w = (p_ptr->total_winner ? 1 : 0) + (p_ptr->once_winner ? 2 : 0) + (p_ptr->iron_winner ? 4 : 0) + (p_ptr->iron_winner_ded ? 8 : 0);
-				verify_player(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, p_ptr->lev, 0, 0, 0, 0, 0, 0, p_ptr->wpos, p_ptr->houses_owned, w);//assume NO ADMIN!
+				verify_player(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, p_ptr->lev, 0, 0, 0, 0, 0, 0, p_ptr->wpos, p_ptr->houses_owned, w, 100);//assume NO ADMIN!
 				//Destroy_connection(Players[Ind]->conn, "Success -- You need to login again to complete the process!");
 #endif
 				return;
@@ -3920,7 +3950,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 					p_ptr->mode |= MODE_NO_GHOST;
 					msg_print(Ind, "\377BYour character has been converted to a slot-exclusive IDDC-character!");
 					w = (p_ptr->total_winner ? 1 : 0) + (p_ptr->once_winner ? 2 : 0) + (p_ptr->iron_winner ? 4 : 0) + (p_ptr->iron_winner_ded ? 8 : 0);
-					verify_player(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, p_ptr->lev, 0, 0, 0, 0, 0, 0, p_ptr->wpos, p_ptr->houses_owned, w);//assume NO ADMIN!
+					verify_player(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, p_ptr->lev, 0, 0, 0, 0, 0, 0, p_ptr->wpos, p_ptr->houses_owned, w, 100);//assume NO ADMIN!
 //					Destroy_connection(Players[Ind]->conn, "Success -- You need to login again to complete the process!");
 					return;
 				}
@@ -3942,7 +3972,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 
 				msg_print(Ind, "\377BYour character has been converted to a slot-exclusive IDDC-character!");
 				w = (p_ptr->total_winner ? 1 : 0) + (p_ptr->once_winner ? 2 : 0) + (p_ptr->iron_winner ? 4 : 0) + (p_ptr->iron_winner_ded ? 8 : 0);
-				verify_player(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, p_ptr->lev, 0, 0, 0, 0, 0, 0, p_ptr->wpos, p_ptr->houses_owned, w);//assume NO ADMIN!
+				verify_player(p_ptr->name, p_ptr->id, p_ptr->account, p_ptr->prace, p_ptr->pclass, p_ptr->mode, p_ptr->lev, 0, 0, 0, 0, 0, 0, p_ptr->wpos, p_ptr->houses_owned, w, 100);//assume NO ADMIN!
 
 				/* set typical character parameters as if we were born like this */
 				if (!in_irondeepdive(&p_ptr->wpos)) {
@@ -4042,45 +4072,37 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 			return;
 #endif
 #ifdef AUTO_RET_CMD
-		} else if (prefix(messagelc, "/autoret") || prefix(messagelc, "/ar")) {
+		} else if (prefix(messagelc, "/autoretm") || prefix(messagelc, "/arm")) {
 			char *p = token[1];
+			bool town = FALSE;
 
-			if (p_ptr->prace == RACE_VAMPIRE || !get_skill(p_ptr, SKILL_MIMIC)) {
+			if (p_ptr->prace == RACE_VAMPIRE || !p_ptr->s_info[SKILL_MIMIC].value) {
 				msg_print(Ind, "You cannot use mimic powers.");
 				return;
 			}
 
 			/* Set up a spell by name for auto-retaliation, so mimics can use it too */
 			if (!tk) {
-				if (p_ptr->autoret) {
-					if (p_ptr->autoret >= 128)
-						msg_format(Ind, "You have set mimic power '%c)' for auto-retaliation in towns.", p_ptr->autoret - 128 - 1 + 'a');
-					else
-						msg_format(Ind, "You have set mimic power '%c)' for auto-retaliation.", p_ptr->autoret - 1 + 'a');
-				} else {
-					msg_print(Ind, "You have not set a mimic power for auto-retaliation. ('/ar help' for details.)");
-					//msg_print(Ind, " (Enter '/ar help' to see command usage and examples.)");
-				}
+				show_autoret(Ind, 1, TRUE);
 				return;
 			}
 			if (streq(token[1], "help")) {
 				msg_print(Ind, "Set up a monster spell for auto-retaliation by specifying the spell slot letter");
 				msg_print(Ind, "starting with e), or '-' to disable. Optional prefix 't' for 'in town only'.");
-				msg_print(Ind, " Usage:    /ar [t]<mimic power slot (e..z)>");
-				msg_print(Ind, " Example:  /ar e    sets the first mimic power to auto-retaliate");
-				msg_print(Ind, " Example:  /ar th   sets the fourth mimic power, but only when in town");
-				msg_print(Ind, " Example:  /ar -    disables auto-retaliation with mimic powers");
+				msg_print(Ind, " Usage:    /arm [t]<mimic power slot (e..z)>");
+				msg_print(Ind, " Example:  /arm e    sets the first mimic power to auto-retaliate");
+				msg_print(Ind, " Example:  /arm th   sets the fourth mimic power, but only when in town");
+				msg_print(Ind, " Example:  /arm -    disables auto-retaliation with mimic powers");
 				return;
 			}
 
 			if (*p == 't') {
-				p_ptr->autoret = 128;
+				town = TRUE;
 				p++;
 			}
-			else p_ptr->autoret = 0;
-
 			if (*p == '-') {
 				msg_print(Ind, "Mimic power auto-retaliation is now disabled.");
+				p_ptr->autoret &= 0xFF00; /* Keep rune auto-ret though */
 				return;
 			}
 
@@ -4090,7 +4112,63 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 			}
 
 			msg_format(Ind, "Mimic power '%c)' is now set for auto-retaliation.", *p);
-			p_ptr->autoret += *p - 'a' + 1;
+			/* Mimicry starts at 1 and ends at 255 (0x00FF), so as not to overlap with runecraft, which starts at 256 (0x0100).
+			   Note that we keep any active runecraft auto-ret (0xFF00 mask). */
+			p_ptr->autoret = (p_ptr->autoret & 0xFF00) | (town ? 0x0080 : 0x0000) | (*p - 'a' + 1);
+			return;
+		} else if (prefix(messagelc, "/autoretr") || prefix(messagelc, "/arr")) {
+			char *p = token[1];
+			bool town = FALSE;
+
+#ifndef TEST_SERVER
+	    /* ----- available bitmask for rune-autoret are 0x7F00, so that's 7 bits (shifted 8 bits to the left),
+	    or expressed in decimal value range: <1..127> * 256, so 127 distinct values available.
+	    (The 8th bit is the 'town-only' flag.) */
+	    msg_print(Ind, "Sorry, this command is currently not available.");
+	    return;
+#endif
+
+			if (!p_ptr->s_info[SKILL_R_LITE].value && !p_ptr->s_info[SKILL_R_DARK].value &&
+			    !p_ptr->s_info[SKILL_R_NEXU].value && !p_ptr->s_info[SKILL_R_NETH].value &&
+			    !p_ptr->s_info[SKILL_R_CHAO].value && !p_ptr->s_info[SKILL_R_MANA].value) {
+				msg_print(Ind, "You cannot use runecraft.");
+				return;
+			}
+
+			/* Set up a spell by name for auto-retaliation, so mimics can use it too */
+			if (!tk) {
+				show_autoret(Ind, 2, TRUE);
+				return;
+			}
+			if (streq(token[1], "help")) {
+				msg_print(Ind, "Set up a rune spell for auto-retaliation by specifying ???");
+				msg_print(Ind, "starting with ..., or '-' to disable. Optional prefix 't' for 'in town only'.");
+				msg_print(Ind, " Usage:    /arr [t]<rune (a..z)>");
+				msg_print(Ind, " Example:  /arr a    sets the first rune to auto-retaliate");
+				msg_print(Ind, " Example:  /arr td   sets the fourth rune, but only when in town");
+				msg_print(Ind, " Example:  /arr -    disables auto-retaliation with runes");
+				return;
+			}
+
+			if (*p == 't') {
+				town = TRUE;
+				p++;
+			}
+			if (*p == '-') {
+				msg_print(Ind, "Rune power auto-retaliation is now disabled.");
+				p_ptr->autoret &= 0x00FF; /* Keep mimic power auto-ret though */
+				return;
+			}
+
+			if (*p < 'a' || *p > 'z') {
+				msg_print(Ind, "\377yRune power must be within range 'a' to 'z'!");
+				return;
+			}
+
+			msg_format(Ind, "Rune power '%c)' is now set for auto-retaliation.", *p);
+			/* Runecraft stars at 256 (0x0100), so as not to overlap with mimicry, which starts at 1.
+			   Note that we keep any active mimic power auto-ret (0x00FF mask). */
+			p_ptr->autoret = (p_ptr->autoret & 0x00FF) | (town ? 0x8000 : 0x0000) | ((*p - 'a' + 1) << 8);
 			return;
 #endif
 #ifdef ENABLE_SELF_FLASHING
@@ -4305,6 +4383,11 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 					if (!reserved_name_character[i][0]) break;
 
 					if (!strcmp(reserved_name_character[i], message3)) {
+						for (j = 1; j <= NumPlayers; j++)
+							if (!strcmp(Players[j]->accountname, reserved_name_account[i])) {
+								msg_format(Ind, "That deceased character belonged to account: \377s%s \377w(\377Gonline\377w)", reserved_name_account[i]);
+								return;
+							}
 						msg_format(Ind, "That deceased character belonged to account: \377s%s", reserved_name_account[i]);
 						return;
 					}
@@ -4316,7 +4399,14 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 #else /* check for account name */
 				if (!GetAccount(&acc, message3, NULL, FALSE))
 					msg_print(Ind, "That character or account name does not exist.");
-				else msg_print(Ind, "There is no such character, but there is an account of that name.");
+				else {
+					for (i = 1; i <= NumPlayers; i++)
+						if (!strcmp(Players[i]->accountname, message3)) {
+							msg_print(Ind, "There is no such character, but there is an account of that name \377Gonline\377w.");
+							return;
+						}
+					msg_print(Ind, "There is no such character, but there is an account of that name.");
+				}
 #endif
 				return;
 			}
@@ -4345,6 +4435,10 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				int lev = lookup_player_level(p_id);
 				byte mode = lookup_player_mode(p_id);
 				char col;
+				player_type Dummy;
+
+				Dummy.pclass = (ptype & 0xff00) >> 8;
+				Dummy.prace = ptype & 0xff;
 
 				switch (mode & MODE_MASK) { // TODO: give better modifiers
 				case MODE_NORMAL:
@@ -4374,21 +4468,23 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 					/* Note: This is 13 characters too long if name is really max and level 2-digits and depth is -XXX.
 					   Basically, the non-admin version perfectly fills out the whole line already if maxed except for royal title.
 					   So we shorten some text in it.. */
-					msg_format(Ind, "Character: %sLevel %d \377%c%s %s\377w, account: \377s%s%s (%d,%d,%d)",
+					msg_format(Ind, "Character: %sLevel %d \377%c%s%s\377w, account: \377s%s%s (%d,%d,%d)",
 					    (lookup_player_winner(p_id) & 0x01) ? "\377v" : "",
 					    lev, col,
 					    //race_info[ptype & 0xff].title,
-					    special_prace_lookup[ptype & 0xff],
+					    //special_prace_lookup[ptype & 0xff],
+					    get_prace2(&Dummy),
 					    class_info[ptype >> 8].title,
 					    acc,
 					    online ? "\377G" : "",
 					    wpos.wx, wpos.wy, wpos.wz);
 				} else
-				msg_format(Ind, "That %slevel %d \377%c%s %s\377w belongs to account: \377s%s%s",
+				msg_format(Ind, "That %slevel %d \377%c%s%s\377w belongs to account: \377s%s%s",
 				    (lookup_player_winner(p_id) & 0x01) ? "royal " : "",
 				    lev, col,
 				    //race_info[ptype & 0xff].title,
-				    special_prace_lookup[ptype & 0xff],
+				    //special_prace_lookup[ptype & 0xff],
+				    get_prace2(&Dummy),
 				    class_info[ptype >> 8].title,
 				    acc,
 				    online ? " \377G(online)" : "");
@@ -4487,6 +4583,68 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 			msg_print(Ind, " (15) light brown: \377Ulumber");
 			return;
 		}
+		else if (prefix(messagelc, "/setorder")) { /* Non-admin version - Set custom list position for this character in the account overview screen on login */
+			int max_cpa = MAX_CHARS_PER_ACCOUNT;
+			int *id_list, ids, cur_order, order, max_order = 0;
+
+#ifdef ALLOW_DED_IDDC_MODE
+			max_cpa += MAX_DED_IDDC_CHARS;
+#endif
+#ifdef ALLOW_DED_PVP_MODE
+			max_cpa += MAX_DED_PVP_CHARS;
+#endif
+			ids = player_id_list(&id_list, p_ptr->account);
+			if (!ids) { /* paranoia */
+				msg_print(Ind, "ERROR.");
+				return;
+			}
+			/* Let us specify an order between 1..n where n is our number of existing characters */
+			if (ids < max_cpa) max_cpa = ids;
+
+			if (tk == 1 && token[1][0] == '?') {
+				msg_format(Ind, "This character's order weight is currently: %d (of 1..%d)", lookup_player_order(p_ptr->id), max_cpa);
+				C_KILL(id_list, ids, int);
+				return;
+			}
+
+			if (tk != 1 || k < 1 || k > max_cpa) {
+				msg_format(Ind, "Usage 1:   /setorder 1..%d", max_cpa);
+				msg_print(Ind, "Will set your current character's position in the Character Overview list.");
+				msg_print(Ind, "A character with a higher position will be listed below one with lower position.");
+				msg_print(Ind, "Usage 2:   /setorder ?");
+				msg_print(Ind, "Will query this character's current position in the Character Overview list.");
+				C_KILL(id_list, ids, int);
+				return;
+			}
+
+			/* Create an intuitive order from the positioning info:
+			   If we increase a character's position, all characters below us up to the new position will be slid up by one.
+			   If we decrease a character's position, all characters above us starting from the new position will be slid down by one. */
+			cur_order = lookup_player_order(p_ptr->id);
+			if (k == cur_order) {
+				msg_print(Ind, "This character is already at that order position.");
+				C_KILL(id_list, ids, int);
+				return;
+			}
+			for (i = 0; i < ids; i++) {
+				if (id_list[i] == p_ptr->id) continue; /* Skip the character issuing this command */
+				order = lookup_player_order(id_list[i]);
+				if (k > cur_order) {
+					if (order > cur_order && order <= k) set_player_order(id_list[i], order - 1);
+					/* Remember the order of the character currently at the bottom the list */
+					if (order - 1 > max_order) max_order = order - 1;
+				} else {
+					if (order < cur_order && order >= k) set_player_order(id_list[i], order + 1);
+				}
+			}
+			/* Prevent creating holes in the sequential ordering by choosing too big an order number */
+			if (k > cur_order && k > max_order + 1) k = max_order + 1;
+			/* Insert us at the desired position */
+			set_player_order(p_ptr->id, k);
+			msg_format(Ind, "This character's ordering weight has been set to %d.", k);
+			C_KILL(id_list, ids, int);
+			return;
+		}
 
 
 		/*
@@ -4509,7 +4667,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 			if (prefix(messagelc, "/val")) {
 				if(!tk) return;
 				/* added checking for account existence - mikaelh */
-				switch(validate(message3)) {
+				switch (validate(message3)) {
 				case -1: msg_format(Ind, "\377GValidating %s", message3);
 					break;
 				case 0: msg_format(Ind, "\377rAccount %s not found", message3);
@@ -4521,7 +4679,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 			if (prefix(messagelc, "/inval")){
 				if(!tk) return;
 				/* added checking for account existence - mikaelh */
-				switch(invalidate(message3, FALSE)) {
+				switch (invalidate(message3, FALSE)) {
 				case -1: msg_format(Ind, "\377GInvalidating %s", message3);
 					break;
 				case 0: msg_format(Ind, "\377rAccount %s not found", message3);
@@ -4606,39 +4764,39 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				return;
 			}
 			else if (prefix(messagelc, "/shutempty")) {
-				msg_admins(0, "\377y* Shutting down as soon as dungeons are empty *");
+				msg_admins(0, "\377y* Shutting down when dungeons are empty *");
 				cfg.runlevel = 2048;
 				return;
 			}
 			else if (prefix(messagelc, "/shutlow")) {
-				msg_admins(0, "\377y* Shutting down as soon as dungeons are empty and few (8) players are on *");
+				msg_admins(0, "\377y* Shutting down when dungeons are empty and few (8) players are on *");
 				cfg.runlevel = 2047;
 				return;
 			}
 			else if (prefix(messagelc, "/shutvlow")) {
-				msg_admins(0, "\377y* Shutting down as soon as dungeons are empty and very few (5) players are on *");
+				msg_admins(0, "\377y* Shutting down when dungeons are empty and very few (5) players are on *");
 				cfg.runlevel = 2046;
 				return;
 			}
 			else if (prefix(messagelc, "/shutnone")) {
-				msg_admins(0, "\377y* Shutting down as soon as no players are on anymore *");
+				msg_admins(0, "\377y* Shutting down when no players are on anymore *");
 				cfg.runlevel = 2045;
 				return;
 			}
 			else if (prefix(messagelc, "/shutactivevlow")) {
-				msg_admins(0, "\377y* Shutting down as soon as dungeons are empty and very few (6) players are active *");
+				msg_admins(0, "\377y* Shutting down when dungeons are empty and very few (6) players are active *");
 				cfg.runlevel = 2044;
 				return;
 			}
 #if 0	/* not implemented yet - /shutempty is currently working this way */
 			else if (prefix(messagelc, "/shutsurface")) {
-				msg_admins(0, "\377y* Shutting down as soon as noone is inside a dungeon/tower *");
+				msg_admins(0, "\377y* Shutting down when noone is inside a dungeon/tower *");
 				cfg.runlevel = 2050;
 				return;
 			}
 #endif
 			else if (prefix(messagelc, "/shutxlow")) {
-				msg_admins(0, "\377y* Shutting down as soon as dungeons are empty and extremely few (3) players are on *");
+				msg_admins(0, "\377y* Shutting down when dungeons are empty and extremely few (3) players are on *");
 				cfg.runlevel = 2051;
 				return;
 			}
@@ -5145,6 +5303,11 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				msg_format(Ind, "\377rItems on %s are cleared.", wpos_format(Ind, &wp));
 				return;
 			}
+			else if (prefix(messagelc, "/cp")) {
+				party_check(Ind);
+				account_check(Ind);
+				return;
+			}
 			else if (prefix(messagelc, "/mdelete")) { /* delete the monster currently looked at */
 				if (p_ptr->health_who <= 0) {//target_who
 					msg_print(Ind, "No monster looked at.");
@@ -5153,12 +5316,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				delete_monster_idx(p_ptr->health_who, TRUE);
 				return;
 			}
-			else if (prefix(messagelc, "/cp")) {
-				party_check(Ind);
-				account_check(Ind);
-				return;
-			}
-			else if (prefix(messagelc, "/geno-level") || prefix(messagelc, "/geno")) {
+			else if (prefix(messagelc, "/geno-level") || prefix(messagelc, "/geno")) { /* parameter: don't skip pets/golems/questors */
 				bool full = (tk);
 
 				/* Wipe even if town/wilderness */
@@ -5168,7 +5326,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				msg_format(Ind, "\377r%sMonsters on %s are cleared.", full ? "ALL " : "", wpos_format(Ind, &wp));
 				return;
 			}
-			else if (prefix(messagelc, "/vanitygeno") || prefix(messagelc, "/vgeno")) {
+			else if (prefix(messagelc, "/vanitygeno") || prefix(messagelc, "/vgeno")) { /* removes all no-death monsters */
 				for (i = m_max - 1; i >= 1; i--) {
 					monster_type *m_ptr = &m_list[i];
 
@@ -5182,10 +5340,9 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				msg_format(Ind, "\377rVanity monsters on %s are cleared.", wpos_format(Ind, &wp));
 				return;
 			}
-			else if (prefix(messagelc, "/mkill-level") || prefix(messagelc, "/mkill")) {
+			else if (prefix(messagelc, "/mkill-level") || prefix(messagelc, "/mkill")) { /* Kill all monsters on the level. Parameter to kill them with obvious damage inflicted, for show. */
 				bool fear, full = (tk);
 
-				/* Kill all the monsters */
 				for (i = m_max - 1; i >= 1; i--) {
 					monster_type *m_ptr = &m_list[i];
 					if (!inarea(&m_ptr->wpos, &p_ptr->wpos)) continue;
@@ -5198,12 +5355,50 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				msg_format(Ind, "\377r%sMonsters on %s were killed.", full ? "ALL " : "", wpos_format(Ind, &p_ptr->wpos));
 				return;
 			}
-			else if (prefix(messagelc, "/mgeno")) { /* remove the monster currently looked at (NOT the one targetted) - C. Blue */
-				if (p_ptr->health_who <= 0) {//target_who
-					msg_print(Ind, "No monster looked at.");
-					return; /* no monster targetted */
+			else if (prefix(messagelc, "/ugeno")) { /* remove all unique monsters from the level. Parameter: Inverse: keep only uniques. */
+				/* Delete all the monsters */
+				for (i = m_max - 1; i >= 1; i--) {
+					monster_type *m_ptr = &m_list[i];
+
+					if (!inarea(&m_ptr->wpos, &p_ptr->wpos)) continue;
+					//if (m_ptr->pet || m_ptr->special || m_ptr->questor) continue;
+					if (tk) {
+						if (r_info[m_ptr->r_idx].flags1 & RF1_UNIQUE) continue;
+					} else {
+						if (!(r_info[m_ptr->r_idx].flags1 & RF1_UNIQUE)) continue;
+
+						if (season_halloween &&
+						    (m_ptr->r_idx == RI_PUMPKIN1 || m_ptr->r_idx == RI_PUMPKIN2 || m_ptr->r_idx == RI_PUMPKIN3)) {
+							great_pumpkin_duration = 0;
+							great_pumpkin_timer = rand_int(2); /* fast respawn if not killed! */
+							//s_printf("HALLOWEEN: Pumpkin set to fast respawn\n");
+						}
+					}
+					delete_monster_idx(i, TRUE);
 				}
-				delete_monster_idx(p_ptr->health_who, TRUE);
+				return;
+			}
+			else if (prefix(messagelc, "/untrap")) { /* remove all traps from floor */
+				cave_type **zcave, *c_ptr;
+				struct c_special *cs_ptr;
+				struct worldpos *wpos = &p_ptr->wpos;
+				int x, y;
+
+				if (!(zcave = getcave(wpos))) return;
+
+				i = 0;
+				for (y = 1; y < MAX_HGT - 1; y++)
+				for (x = 1; x < MAX_WID - 1; x++) {
+					c_ptr = &zcave[y][x];
+					if (!(cs_ptr = GetCS(c_ptr, CS_TRAPS))) continue;
+
+					i++;
+					cs_erase(c_ptr, cs_ptr);
+					note_spot(Ind, y, x);
+					if (c_ptr->o_idx && !c_ptr->m_idx) everyone_clear_ovl_spot(wpos, y, x);
+					else everyone_lite_spot(wpos, y, x);
+				}
+				msg_format(Ind, "%d traps removed.", i);
 				return;
 			}
 			else if (prefix(messagelc, "/game")) {
@@ -6607,8 +6802,8 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				bypass_invuln = FALSE;
 
 				//unsnow
-				if (Players[j]->temp_misc_2 & 0x01) {
-					Players[j]->temp_misc_2 &= ~0x01;
+				if (Players[j]->temp_misc_1 & 0x08) {
+					Players[j]->temp_misc_1 &= ~0x08;
 					note_spot(j, Players[j]->py, Players[j]->px);
 					update_player(j); //may return to being invisible
 					everyone_lite_spot(&Players[j]->wpos, Players[j]->py, Players[j]->px);
@@ -7566,6 +7761,33 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				s_printf("done.\n");
 				return;
 			}
+			else if (prefix(messagelc, "/partymemberfix")) { //no idea atm why some parties show way higher member # in shift+p than actual members
+				int slot, members, scanned = 0, fixed = 0;
+				hash_entry *ptr;
+				s_printf("PARTYMEMBERFIX:\n");
+				for (i = 1; i < MAX_PARTIES; i++) {
+					if (!parties[i].members) continue;
+					scanned++;
+					members = 0;
+					for (slot = 0; slot < NUM_HASH_ENTRIES; slot++) {
+						ptr = hash_table[slot];
+						while (ptr) {
+							if (ptr->party == i) members++;
+							ptr = ptr->next;
+						}
+					}
+					if (members != parties[i].members) {
+						s_printf(" Fixed party %d '%s': %d -> %d\n", i, parties[i].name, parties[i].members, members);
+						parties[i].members = members;
+						if (!members) del_party(i);
+						fixed++;
+					}
+					else s_printf(" (Party %d '%s': %d is correct)\n", i, parties[i].name, members);
+				}
+				s_printf("Done.\n");
+				msg_format(Ind, "Scanned %d parties, fixed %d.", scanned, fixed);
+				return;
+			}
 			else if (prefix(messagelc, "/guildmodefix")) {
 				cptr name = NULL;
 				s_printf("Fixing guild modes..\n");
@@ -7585,12 +7807,13 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				return;
 			}
 			else if (prefix(messagelc, "/guildmemberfix")) {
-				int slot, members;
+				int slot, members, scanned = 0, fixed = 0;
 				hash_entry *ptr;
 				/* fix wrongly too high # of guild members, caused by (now fixed) guild_dna bug */
 				s_printf("GUILDMEMBERFIX:\n");
 				for (i = 1; i < MAX_GUILDS; i++) {
 					if (!guilds[i].members) continue;
+					scanned++;
 					members = 0;
 					for (slot = 0; slot < NUM_HASH_ENTRIES; slot++) {
 						ptr = hash_table[slot];
@@ -7599,12 +7822,16 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 							ptr = ptr->next;
 						}
 					}
-					if (members != guilds[i].members) s_printf(" Fixed guild %d '%s': %d -> %d\n", i, guilds[i].name, guilds[i].members, members);
+					if (members != guilds[i].members) {
+						s_printf(" Fixed guild %d '%s': %d -> %d\n", i, guilds[i].name, guilds[i].members, members);
+						guilds[i].members = members;
+						if (!members) del_guild(i);
+						fixed++;
+					}
 					else s_printf(" (Guild %d '%s': %d is correct)\n", i, guilds[i].name, members);
-					guilds[i].members = members;
-					if (!members) del_guild(i);
 				}
 				s_printf("Done.\n");
+				msg_format(Ind, "Scanned %d guilds, fixed %d.", scanned, fixed);
 				return;
 			}
 			else if (prefix(messagelc, "/guildrename")) {
@@ -7778,8 +8005,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 					if (!o_ptr->k_idx || o_ptr->k_idx == 1) {
 						if (o_ptr->held_m_idx) {
 							msg_format(Ind, "Invalid item (o_idx=%d) (k_idx=%d) held by monster %d", i, o_ptr->k_idx, o_ptr->held_m_idx);
-						}
-						else {
+						} else {
 							msg_format(Ind, "Invalid item (o_idx=%d) (k_idx=%d) found at (%d,%d,%d) (x=%d,y=%d)", i, o_ptr->k_idx, o_ptr->wpos.wx, o_ptr->wpos.wy, o_ptr->wpos.wz, o_ptr->ix, o_ptr->iy);
 						}
 					}
@@ -7881,7 +8107,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 							/* k_idx = 1 is something weird... */
 							else if (!o_ptr->k_idx || o_ptr->k_idx == 1) {
 								msg_format(Ind, "Removed an invalid item (o_idx=%d) (k_idx=%d) found at (x=%d,y=%d)", o_idx, o_ptr->k_idx, x, y);
-								delete_object_idx(o_idx, FALSE);
+								delete_object_idx(o_idx, TRUE);
 							}
 							prev_o_ptr = NULL;
 							/* more objects on this grid? */
@@ -7901,7 +8127,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 								}
 								else if (!o_ptr->k_idx || o_ptr->k_idx == 1) {
 									msg_format(Ind, "Removed an invalid item (o_idx=%d) (k_idx=%d) from a pile at (x=%d,y=%d)", o_idx, o_ptr->k_idx, x, y);
-									delete_object_idx(o_idx, FALSE);
+									delete_object_idx(o_idx, TRUE);
 								}
 							}
 						}
@@ -8205,13 +8431,12 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				cave_type **zcave;
 				object_type *o_ptr;
 				j = 0;
-				bool sj;
 				/* go through all items (well except for player inventories
 				   or tradehouses, but that's not needed anyway) */
-				for(i = 0; i < o_max; i++){
+				for (i = 0; i < o_max; i++) {
 					o_ptr = &o_list[i];
 					/* check unprotected items on the world's surface in CAVE_ICKY locations, ie houses */
-					if(o_ptr->k_idx && o_ptr->marked2 == ITEM_REMOVAL_NORMAL && !o_ptr->wpos.wz) {
+					if (o_ptr->k_idx && o_ptr->marked2 == ITEM_REMOVAL_NORMAL && !o_ptr->wpos.wz && !o_ptr->held_m_idx && !o_ptr->embed) {
 						/* make sure object's floor is currently allocated so we can test for CAVE_ICKY flag */
 						h = 0;
 						if (!getcave(&o_ptr->wpos)) {
@@ -8221,13 +8446,6 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 							wilderness_gen(&o_ptr->wpos);
 						}
 						if ((zcave = getcave(&o_ptr->wpos))) { /* paranoia? */
-							/* monster traps hack */
-							sj = FALSE;
-							if (!in_bounds_array(o_ptr->iy, o_ptr->ix) &&
-							    in_bounds_array(255 - o_ptr->iy, o_ptr->ix)){
-								sj = TRUE;
-								o_ptr->iy = 255 - o_ptr->iy;
-							}
 							/* in a house (or vault, theoretically) */
 							if (!o_ptr->wpos.wz && (zcave[o_ptr->iy][o_ptr->ix].info & CAVE_ICKY) && !(zcave[o_ptr->iy][o_ptr->ix].info & CAVE_JAIL)) {
 								/* mark item as 'inside house' */
@@ -8235,8 +8453,6 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 								/* count for fun */
 								j++;
 							}
-							/* restore monster traps hack */
-							if(sj) o_ptr->iy = 255 - o_ptr->iy;
 							/* remove our exclusively allocated level again */
 							if (h) dealloc_dungeon_level(&o_ptr->wpos);
 						} else {
@@ -8262,13 +8478,12 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				cave_type **zcave;
 				object_type *o_ptr;
 				j = 0;
-				bool sj;
 				/* go through all items (well except for player inventories
 				   or tradehouses, but that's not needed anyway) */
 				for(i = 0; i < o_max; i++){
 					o_ptr = &o_list[i];
 					/* check ITEM_REMOVAL_NEVER items on the world's surface that aren't inside houses */
-					if(o_ptr->k_idx && o_ptr->marked2 == ITEM_REMOVAL_NEVER && !o_ptr->wpos.wz) {
+					if (o_ptr->k_idx && o_ptr->marked2 == ITEM_REMOVAL_NEVER && !o_ptr->wpos.wz && !o_ptr->held_m_idx && !o_ptr->embed) {
 						/* make sure object's floor is currently allocated so we can test for CAVE_ICKY flag;
 						   this is neccessary for server-generated public house contents for example */
 						h = 0;
@@ -8279,13 +8494,6 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 							wilderness_gen(&o_ptr->wpos);
 						}
 						if ((zcave = getcave(&o_ptr->wpos))) { /* paranoia? */
-							/* monster traps hack */
-							sj = FALSE;
-							if (!in_bounds_array(o_ptr->iy, o_ptr->ix) &&
-							    in_bounds_array(255 - o_ptr->iy, o_ptr->ix)){
-								sj = TRUE;
-								o_ptr->iy = 255 - o_ptr->iy;
-							}
 							/* not in a house (or vault, theoretically) */
 							if (!(zcave[o_ptr->iy][o_ptr->ix].info & CAVE_ICKY)) {
 								/* remove permanence */
@@ -8293,8 +8501,6 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 								/* count for fun */
 								j++;
 							}
-							/* restore monster traps hack */
-							if(sj) o_ptr->iy = 255 - o_ptr->iy;
 							/* remove our exclusively allocated level again */
 							if (h) dealloc_dungeon_level(&o_ptr->wpos);
 						} else {
@@ -8434,8 +8640,9 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				o_ptr->ident &= ~(ID_FIXED | ID_EMPTY | ID_KNOWN | ID_RUMOUR | ID_MENTAL);
 				o_ptr->ident &= ~(ID_SENSE | ID_SENSED_ONCE | ID_SENSE_HEAVY);
 
-				p_ptr->obj_felt[o_ptr->k_idx] = FALSE;//(no effect)
-				p_ptr->obj_felt_heavy[o_ptr->k_idx] = FALSE;//(no effect)
+				//keep character's pseudo-id knowledge of the general flavour of that item type
+				//p_ptr->obj_felt[o_ptr->k_idx] = FALSE;
+				//p_ptr->obj_felt_heavy[o_ptr->k_idx] = FALSE;
 
 				p_ptr->window |= PW_INVEN;
 
@@ -8489,6 +8696,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 			else if (prefix(messagelc, "/ai")) { /* returns/resets all AI flags and states of monster currently looked at (NOT the one targetted) - C. Blue */
 				monster_type *m_ptr;
 				int m_idx;
+
 				if (p_ptr->health_who <= 0) {//target_who
 					msg_print(Ind, "No monster looked at.");
 					return; /* no monster targetted */
@@ -8515,6 +8723,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 #ifdef USE_SOUND_2010
 			else if (prefix(messagelc, "/hmus")) { /* set own music according to the location of someone else */
 				u32b f;
+
 				if (tk < 1) {
 					msg_print(Ind, "Usage: /hmus <player>");
 					return;
@@ -8531,6 +8740,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 			}
 			else if (prefix(messagelc, "/psfx")) { /* play specific sound */
 				int vol = 100;
+
 				if (!__audio_sfx_max) {
 					msg_print(Ind, "No sound effects available.");
 					return;
@@ -8547,6 +8757,29 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 					msg_format(Ind, "Playing <%s>.", token[1]);
 					sound(Ind, token[1], NULL, SFX_TYPE_COMMAND, FALSE);
 				}
+				return;
+			}
+			else if (prefix(messagelc, "/wthunder")) { /* play thunder weather sound */
+				/* Usage: /wthunder [volume] [char/accname] */
+				cptr pn = NULL;
+
+				if (!__audio_sfx_max) {
+					msg_print(Ind, "No sound effects available.");
+					return;
+				}
+				if (tk) {
+					if (k) pn = strchr(message3, ' ');
+					else pn = message3 - 1;
+				}
+				if (pn) {
+					i = name_lookup(Ind, pn + 1, FALSE, TRUE, FALSE);
+					if (!i) return;
+				} else {
+					i = Ind;
+					pn = p_ptr->name - 1;
+				}
+				msg_format(Ind, "Playing 'thunder' for '%s' as SFX_TYPE_WEATHER at vol %d.", pn + 1, k ? k : 100);
+				sound_vol(i, "thunder", NULL, SFX_TYPE_WEATHER, FALSE, k ? k : 100);
 				return;
 			}
 			else if (prefix(messagelc, "/pmus")) { /* play specific music */
@@ -8580,6 +8813,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 #endif
 			else if (prefix(messagelc, "/towea")) { /* teleport player to a sector with weather going */
 				int x, y;
+
 				for (x = 0; x < 64; x++)
 					for (y = 0; y < 64; y++)
 						if (wild_info[y][x].weather_type > 0 &&
@@ -9338,7 +9572,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 					set_runlevel(-1);
 				return;
 			}
-			/* Same as above but only for one specific house! */
+			/* Same as above but only for one specific house! You must be standing on the house door! */
 			else if (prefix(messagelc, "/backup_one_estate")) {
 				s32b pid;
 
@@ -10083,11 +10317,63 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				return;
 			}
 			else if (prefix(messagelc, "/reservednames")) { /* any parm to not stop at 1st 'nulled' name found */
+				bool found = FALSE;
+
 				for (i = 0; i < MAX_RESERVED_NAMES; i++) {
+					if (reserved_name_character[i][0]) found = TRUE;
 					if (!tk && !reserved_name_character[i][0]) break;
 					msg_format(Ind, "%s by account %s for %d minutes",
 					    reserved_name_character[i], reserved_name_account[i], reserved_name_timeout[i]);
 				}
+				if (!found) msg_print(Ind, "No names reserved.");
+				return;
+			}
+			else if (prefix(messagelc, "/addreservedname")) { /* admin-hack: manually add a name to the reserved-names list for 60 minutes */
+				char name[NAME_LEN], account[ACCOUNTNAME_LEN], *ca;
+
+				ca = strchr(message3, ':');
+				if (!ca) {
+					msg_print(Ind, "Usage: /addreservedname account:name");
+					return;
+				}
+				*ca = 0;
+				strcpy(account, message3);
+				strcpy(name, ca + 1);
+				for (i = 0; i < MAX_RESERVED_NAMES; i++) {
+					if (reserved_name_character[i][0]) continue;
+
+					strcpy(reserved_name_character[i], name);
+					strcpy(reserved_name_account[i], account);
+					reserved_name_timeout[i] = 60; //minutes
+					s_printf("RESERVED_NAMES: reserved \"%s\" (%s) for %d at #%d\n", reserved_name_character[i], reserved_name_account[i], reserved_name_timeout[i], i);
+					msg_format(Ind, "Reserved \"%s\" (%s) for %d at #%d\n", reserved_name_character[i], reserved_name_account[i], reserved_name_timeout[i], i);
+					break;
+				}
+				if (i == MAX_RESERVED_NAMES)
+					s_printf("Warning: Couldn't reserve character name '%s' for account '%s'!\n", name, account);
+				return;
+			}
+			else if (prefix(messagelc, "/delreservedname")) { /* admin-hack: manually add a name to the reserved-names list for 60 minutes */
+				char name[NAME_LEN], account[ACCOUNTNAME_LEN], *ca;
+
+				ca = strchr(message3, ':');
+				if (!ca) {
+					msg_print(Ind, "Usage: /delreservedname account:name");
+					return;
+				}
+				*ca = 0;
+				strcpy(account, message3);
+				strcpy(name, ca + 1);
+				for (i = 0; i < MAX_RESERVED_NAMES; i++) {
+					if (reserved_name_character[i][0]) continue;
+					if (strcmp(reserved_name_account[i], account)) continue;
+					if (strcmp(reserved_name_character[i], name)) continue;
+					s_printf("RESERVED_NAMES: removed \"%s\" (%s) for %d at #%d\n", reserved_name_character[i], reserved_name_account[i], reserved_name_timeout[i], i);
+					msg_format(Ind, "Removed \"%s\" (%s) for %d at #%d\n", reserved_name_character[i], reserved_name_account[i], reserved_name_timeout[i], i);
+					reserved_name_character[i][0] = 0;
+					break;
+				}
+				if (i == MAX_RESERVED_NAMES) msg_print(Ind, "Entry not found.");
 				return;
 			}
 			else if (prefix(messagelc, "/purgeaccountfile")) {
@@ -10188,7 +10474,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				}
 				return;
 			}
-			/* imprint 'housed' on all objects */
+			/* imprint 'housed' on all objects inside houses */
 			else if (prefix(messagelc, "/optrhoused")) {
 				int i, h;
 				house_type *h_ptr;
@@ -10206,6 +10492,7 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				/* process HF_RECT houses */
 				for (i = 0; i < o_max; i++) {
 					o_ptr = &o_list[i];
+					if (o_ptr->held_m_idx || o_ptr->embed) continue;
 					o_ptr->housed = inside_which_house(&o_ptr->wpos, o_ptr->ix, o_ptr->iy);
 				}
 				msg_format(Ind, "%d houses, %d free objects, done.", num_houses, o_max);
@@ -10467,13 +10754,45 @@ void do_slash_cmd(int Ind, char *message, char *message_uncensored) {
 				return;
 			}
 #endif
+			else if (prefix(messagelc, "/setaorder")) { /* Set custom list position for this character in the account overview screen on login (see /setorder)*/
+				set_player_order(p_ptr->id, k);
+				return;
+			}
+			else if (prefix(messagelc, "/initorder")) { /* Initialize character ordering for the whole account database */
+				init_character_ordering(Ind);
+				return;
+			}
+			else if (prefix(messagelc, "/accountorder")) { /* Initialize character ordering for the whole account database */
+				struct account acc;
+
+				if (!GetAccount(&acc, message3, NULL, FALSE)) {
+					msg_print(Ind, "\377oNo account of that name exists.");
+					return;
+				}
+				init_account_order(Ind, acc.id);
+				return;
+			}
+			else if (prefix(messagelc, "/zeroorder")) { /* Reset character ordering for the whole account database to zero (unordered) */
+				zero_character_ordering(Ind);
+				return;
+			}
+			else if (prefix(messagelc, "/showaccountorder")) { /* Initialize character ordering for the whole account database */
+				struct account acc;
+
+				if (!GetAccount(&acc, message3, NULL, FALSE)) {
+					msg_print(Ind, "\377oNo account of that name exists.");
+					return;
+				}
+				show_account_order(Ind, acc.id);
+				return;
+			}
 		}
 	}
 
 	do_slash_brief_help(Ind);
 	return;
 }
-#endif
+#endif /* NOTYET */
 
 static void do_slash_brief_help(int Ind){
 #if 0 /* pretty outdated */

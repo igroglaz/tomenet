@@ -259,7 +259,7 @@ N:3:testCastle:C. Blue:Treasure Depository Breach:-1:0:0
 I:1:1:1:100:FFFFF:FFFF:1:1:1:0:0:1
 
 Q:1:1:1059:0:p:u:-1:-1:Guard
-L:0:0:0:63:63:0:0:150:30:0:tq_tc.txt:143:22
+L:0:0:0:63:63:0:0:150:30:0:tq_testcastle.txt:143:22
 W:0:0:0:-:Hold it right there! What is the password?
 Wr:0:0:$$Q That's not the right password, $$r!
 Y:0:-1:-:suxen:-:1
@@ -370,13 +370,16 @@ y:-1:-1:-:*advice*
 yY:*advise*
 yR:-://quest_towneltalk("$$c", -1)
 #yR:-:Hm hm, what do you need advice on?  --moved to quest_towneltalk() actually, as it depends on above function call to sound proper.
-yR:-:How to properly [[prepare]] yourself for venturing into the unknown?, picking
-yR:-:an unknown dungeon to [[explore]]? Honing your [[skills]]?
-yR:-:Or are you wondering about the public [[events]] that are taking place from
-yR:-:time to time? You might also be interested in forming a [[party]] with fellow
-yR:-:adventurers, as it tends to increase chances of survival!
-yR:-:I could also have a look at your [[equipment]] and [[status]] of your
-yR:-:well-being in general.
+#yR:-:How to properly [[prepare]] yourself for venturing into the unknown?, picking
+#yR:-:an unknown dungeon to [[explore]]? Honing your [[skills]]?
+#yR:-:Or are you wondering about the public [[events]] that are taking place from
+#yR:-:time to time? You might also be interested in forming a [[party]] with fellow
+#yR:-:adventurers, as it tends to increase chances of survival!
+#yR:-:I could also have a look at your [[equipment]] and [[status]] of your
+#yR:-:well-being in general.
+yR:-:Venturing into a dungeon to [[explore]]? Or are you wondering about the public
+yR:-:[[events]] that are taking place from time to time? I could also have a look
+yR:-:at your [[equipment]] if you like.
 
 Y:0:0:-:*prepar*:-:255
 Y:0:0:-:*inven*:-:255

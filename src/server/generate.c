@@ -8526,6 +8526,78 @@ static void cave_gen(struct worldpos *wpos, player_type *p_ptr) {
 	int dtype = 0;
 	u32b dflags1 = 0x0, dflags2 = 0x0, dflags3 = 0x0;
 
+
+	/* Fixed layout (maybe first non-'DF2_RANDOM' dungeon?) */
+#ifdef TEST_SERVER
+	if (d_ptr && d_ptr->type == DI_DEATH_FATE) {
+#else
+	if (d_ptr && d_ptr->type == DI_DEATH_FATE && p_ptr && (p_ptr->temp_misc_1 & 0x40)) {
+#endif
+		dun = &dun_body;
+		dun->l_ptr = getfloor(wpos);
+		dun->l_ptr->flags1 = LF1_NO_DESTROY;
+		dun->l_ptr->flags2 = LF2_NO_SUMMON | LF2_NO_LIVE_SPAWN;
+		dun->l_ptr->monsters_generated = dun->l_ptr->monsters_spawned = dun->l_ptr->monsters_killed = 0;
+		//if (season_halloween && p_ptr && (p_ptr->prob_travel || p_ptr->ghost)) dun->l_ptr->flags1 |= LF1_FAST_DIVE;
+
+		/* Random seed for checking if a player logs back in on the same
+		   [static] floor that he logged out, or if it has changed. - C. Blue */
+		dun->l_ptr->id = (u32b)rand_int(0xFFFF) << 16;
+		dun->l_ptr->id += rand_int(0xFFFF);
+		dun->l_ptr->hgt = SCREEN_HGT;
+		dun->l_ptr->wid = SCREEN_WID;
+
+		if (!(zcave = getcave(wpos))) return;
+
+		/* Hack -- Don't tell players about it (for efficiency) */
+		level_generation_time = TRUE;
+
+		/* add the arena */
+		//keep objects that may be on the floor...... but get rid of monsters
+		process_dungeon_file("t_arena_mirror.txt", wpos, &y1, &x1, 22, 66, TRUE);
+		zcave[2][65].feat = 29; zcave[2][65].info = 7;
+		//wipe_m_list(&p_ptr->wpos);
+
+		/* reattach objects and monsters */
+		setup_objects();
+		/* target dummies */
+		//setup_monsters();
+		level_generation_time = FALSE;
+		return;
+	} else if (d_ptr && !d_ptr->type && d_ptr->theme == DI_DEATH_FATE) {
+		dun = &dun_body;
+		dun->l_ptr = getfloor(wpos);
+		dun->l_ptr->flags1 = LF1_NO_DESTROY;
+		dun->l_ptr->flags2 = LF2_NO_SUMMON | LF2_NO_LIVE_SPAWN;
+		dun->l_ptr->monsters_generated = dun->l_ptr->monsters_spawned = dun->l_ptr->monsters_killed = 0;
+		//if (season_halloween && p_ptr && (p_ptr->prob_travel || p_ptr->ghost)) dun->l_ptr->flags1 |= LF1_FAST_DIVE;
+
+		/* Random seed for checking if a player logs back in on the same
+		   [static] floor that he logged out, or if it has changed. - C. Blue */
+		dun->l_ptr->id = (u32b)rand_int(0xFFFF) << 16;
+		dun->l_ptr->id += rand_int(0xFFFF);
+		dun->l_ptr->hgt = SCREEN_HGT;
+		dun->l_ptr->wid = SCREEN_WID;
+
+		if (!(zcave = getcave(wpos))) return;
+
+		/* Hack -- Don't tell players about it (for efficiency) */
+		level_generation_time = TRUE;
+
+		/* add the arena */
+		//keep objects that may be on the floor...... but get rid of monsters
+		process_dungeon_file("t_party.txt", wpos, &y1, &x1, 22, 66, TRUE);
+		zcave[0][32].feat = 79; zcave[0][32].info = 7;
+		zcave[0][33].feat = 79; zcave[0][33].info = 7;
+		zcave[0][34].feat = 79; zcave[0][34].info = 7;
+		zcave[15][65].feat = 79; zcave[15][65].info = 7;
+		zcave[16][65].feat = 79; zcave[16][65].info = 7;
+		//wipe_m_list(&p_ptr->wpos);
+
+		level_generation_time = FALSE;
+		return;
+	}
+
 #ifdef IRONDEEPDIVE_EXPAND_SMALL
 	if (in_irondeepdive(wpos)) {
 		/* Note: the only applicable 'SMALLEST' dungeon for IDDC is 'The Maze' - enjoy the huge maze.. */
@@ -8723,7 +8795,7 @@ static void cave_gen(struct worldpos *wpos, player_type *p_ptr) {
 			dun->l_ptr->flags1 |= LF1_IRON_RECALL;
 		/* IRONMAN allows recalling sometimes, if IRONFIX or IRONRND */
 		else if (d_ptr && (dun_lev >= 20) && ( /* was 30 */
-		    (!(p_ptr->temp_misc_2 & 0x02) &&
+		    (!(p_ptr->temp_misc_1 & 0x10) &&
 		    (((d_ptr->flags2 & DF2_IRONRND1) && magik(20)) ||
 		    ((d_ptr->flags2 & DF2_IRONRND2) && magik(12)) ||
 		    ((d_ptr->flags2 & DF2_IRONRND3) && magik(8)) ||
@@ -8779,7 +8851,7 @@ static void cave_gen(struct worldpos *wpos, player_type *p_ptr) {
 	    (random_town_allowed &&
 	    (dun_lev < 100 && (!p_ptr->IDDC_found_rndtown || !in_irondeepdive(wpos)) && (
 	    ((d_ptr->flags2 & DF2_TOWNS_FIX) && !(dun_lev % 20)) ||
-	    (!(p_ptr->temp_misc_2 & 0x02) && (d_ptr->flags2 & DF2_TOWNS_RND) &&
+	    (!(p_ptr->temp_misc_1 & 0x10) && (d_ptr->flags2 & DF2_TOWNS_RND) &&
  #if 0 /* for generic dungeons maybe */
 	     magik(30 / (ABS(((dun_lev + 10) % 20) - 10) + 1))
  #else /* irondeepdive specifically: no towns before 900 ft or around the static towns at 2k and 4k */
@@ -9379,6 +9451,21 @@ static void cave_gen(struct worldpos *wpos, player_type *p_ptr) {
 				alloc_stairs(wpos, (d_ptr->flags1 & DF1_FLAT) ? FEAT_WAY_MORE : FEAT_MORE, 1, 2, NULL);
 		}
 
+	}
+
+	/* Training Tower hack: Prevent those rare but occurring '<' on 50ft that completely entomb the newbie -_-
+	   Note: We assume that the TT is at the same position as the starter town (Bree). */
+	if (wpos->wx == cfg.town_x && wpos->wy == cfg.town_y && wpos->wz == 1) {
+		k = 0;
+		for (i = 7; i >= 0; i--)
+			if (!cave_floor_bold(zcave, dun->l_ptr->up_y + ddy_ddd[i], dun->l_ptr->up_x + ddx_ddd[i])) k++;
+		/* Will the player be entombed? */
+		if (k == 8) {
+			for (i = 7; i >= 0; i--)
+				/* Let's remove all wall grids, not just one.. */
+				if (zcave[dun->l_ptr->up_y + ddy_ddd[i]][dun->l_ptr->up_x + ddx_ddd[i]].feat == FEAT_WALL_EXTRA)
+					cave_set_feat(wpos, dun->l_ptr->up_y + ddy_ddd[i], dun->l_ptr->up_x + ddx_ddd[i], FEAT_FLOOR);
+		}
 	}
 
 #if 0
@@ -10532,8 +10619,9 @@ static void town_gen_hack(struct worldpos *wpos) {
 	struct dungeon_type *d_ptr = wpos->wz != 0 ? (wpos->wz > 0 ? wild->tower : wild->dungeon) : NULL;
 
 	int y, x, k, n;
+	int max_base_stores = MAX_BASE_STORES - 1; /* All stores except for the Rune Repository (#9) */
 //	int max_rooms = (max_st_idx > 72 ? 72 : max_st_idx), base_stores = MAX_BASE_STORES; <- not working, because the amount of buildings will be too small -> repeated-stores-glitch appears.
-	int max_rooms = 72, base_stores = MAX_BASE_STORES;
+	int max_rooms = 72, base_stores = max_base_stores;
 #ifdef NEW_TOWNGENHACK_METHOD
 	int posx[base_stores], posy[base_stores], pos[6 * 4];
 #endif
@@ -10741,7 +10829,7 @@ static void town_gen_hack(struct worldpos *wpos) {
 	/* pick random locations for the base stores */
 	n = 6 * 4;
 	for (k = 0; k < n; k++) pos[k] = k;
-	for (x = 0; x < MAX_BASE_STORES; x++) {
+	for (x = 0; x < max_base_stores; x++) {
 		k = rand_int(n);
 		posx[x] = pos[k] / 4 + 3;
 		posy[x] = pos[k] % 4 + 1;
@@ -10779,7 +10867,7 @@ static void town_gen_hack(struct worldpos *wpos) {
 		}
 	}
 #else
-	for (k = 0; k < MAX_BASE_STORES; k++) {
+	for (k = 0; k < max_base_stores; k++) {
 		/* Build that store at the proper location */
  #if 0 /* I think I took this out for highlander town, but no need maybe; also required for ironman towns! - C. Blue */
 		/* No Black Market in additional towns - C. Blue */
@@ -10805,13 +10893,13 @@ static void town_gen_hack(struct worldpos *wpos) {
  #ifndef NEW_TOWNGENHACK_METHOD
 			if (y >= 2 && y <= 4 && x >= 4 && x <= 7) continue;
  #else
-			for (k = 0; k < MAX_BASE_STORES; k++) {
+			for (k = 0; k < max_base_stores; k++) {
 				if (posx[k] == x && posy[k] == y) {
-					k = MAX_BASE_STORES + 1; //loop hack
+					k = max_base_stores + 1; //loop hack
 					break;
 				}
 			}
-			if (k == MAX_BASE_STORES + 1) continue;
+			if (k == max_base_stores + 1) continue;
  #endif
 
 			/* Pick a random unplaced store */
@@ -10940,7 +11028,7 @@ static void town_gen(struct worldpos *wpos) {
 	/* XXX this will be changed very soon	- Jir -
 	 * It's no good hardcoding things like this.. */
 #if 1
-	if (type > 0 || type < 6) {
+	if (type > 0 && type < 6) { /* the 5 fixed towns */
 		/* Hack -- Use the "simple" RNG */
 		Rand_quick = TRUE;
 
@@ -11213,6 +11301,12 @@ static void del_dungeon(struct worldpos *wpos, bool tower, bool force) {
 
 	wpcopy(&twpos, wpos);
 	d_ptr = (tower ? wild->tower : wild->dungeon);
+
+	if (!d_ptr) { /* just in case */
+		s_printf(" error: does not exist.\n");
+		return;
+	}
+
 	if (d_ptr->flags2 & DF2_DELETED) {
 #ifdef DUNGEON_VISIT_BONUS
  #if 0 /* bs ^^' */

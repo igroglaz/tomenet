@@ -3536,27 +3536,29 @@ static void hook_quit(cptr str) {
 	/* Give a warning */
 	if (str && *str) MessageBox(data[0].w, str, "Error", MB_OK | MB_ICONSTOP);
 
-	/* Copied from quit_hook in c-init.c - mikaelh */
-	if (message_num() && (res || (res = get_3way("Save chat log/all messages?", TRUE)))) {
-		FILE *fp;
-		char buf[80], buf2[1024];
-		time_t ct = time(NULL);
-		struct tm* ctl = localtime(&ct);
+	if (save_chat != 3) {
+		/* Copied from quit_hook in c-init.c - mikaelh */
+		if (message_num() && (res || (res = get_3way("Save chat log/all messages?", TRUE)))) {
+			FILE *fp;
+			char buf[80], buf2[1024];
+			time_t ct = time(NULL);
+			struct tm* ctl = localtime(&ct);
 
-		if (res == 1) strcpy(buf, "tomenet-chat_");
-		else strcpy(buf, "tomenet-messages_");
-		strcat(buf, format("%04d-%02d-%02d_%02d.%02d.%02d",
-		    1900 + ctl->tm_year, ctl->tm_mon + 1, ctl->tm_mday,
-		    ctl->tm_hour, ctl->tm_min, ctl->tm_sec));
-		strcat(buf, ".txt");
+			if (res == 1) strcpy(buf, "tomenet-chat_");
+			else strcpy(buf, "tomenet-messages_");
+			strcat(buf, format("%04d-%02d-%02d_%02d.%02d.%02d",
+			    1900 + ctl->tm_year, ctl->tm_mon + 1, ctl->tm_mday,
+			    ctl->tm_hour, ctl->tm_min, ctl->tm_sec));
+			strcat(buf, ".txt");
 
-		i = message_num();
-		if (!save_chat) get_string("Filename:", buf, 79);
-		path_build(buf2, 1024, ANGBAND_DIR_USER, buf);
-		fp = my_fopen(buf2, "w");
-		if (fp != (FILE*)NULL) {
-			dump_messages_aux(fp, i, 2 - res, FALSE);
-			fclose(fp);
+			i = message_num();
+			if (!save_chat) get_string("Filename:", buf, 79);
+			path_build(buf2, 1024, ANGBAND_DIR_USER, buf);
+			fp = my_fopen(buf2, "w");
+			if (fp != (FILE*)NULL) {
+				dump_messages_aux(fp, i, 2 - res, FALSE);
+				fclose(fp);
+			}
 		}
 	}
 
@@ -3571,13 +3573,24 @@ static void hook_quit(cptr str) {
 #endif
 
 	/* Remember chat input history across logins */
-	path_build(buf, 1024, ANGBAND_DIR_USER, format("chathist-%s.tmp", nick));
-	f = fopen(buf, "w");
-	for (j = 0; j < MSG_HISTORY_MAX; j++) {
-		if (!message_history_chat[j][0]) continue;
-		fprintf(f, "%s\n", message_history_chat[j]);
+	/* Only write history if we have at least one line though */
+	if (hist_chat_end || hist_chat_looped) {
+		FILE *fp;
+		path_build(buf, 1024, ANGBAND_DIR_USER, format("chathist-%s.tmp", nick));
+		fp = fopen(buf, "w");
+		if (!hist_chat_looped) {
+			for (i = 0; i < hist_chat_end; i++) {
+				if (!message_history_chat[i][0]) continue;
+				fprintf(fp, "%s\n", message_history_chat[i]);
+			}
+		} else {
+			for (i = hist_chat_end; i < hist_chat_end + MSG_HISTORY_MAX; i++) {
+				if (!message_history_chat[i % MSG_HISTORY_MAX][0]) continue;
+				fprintf(fp, "%s\n", message_history_chat[i % MSG_HISTORY_MAX]);
+			}
+		}
+		fclose(fp);
 	}
-	fclose(f);
 
 	/* Hack - Save the window positions before destroying them - mikaelh */
 	/* Main window */
@@ -4031,6 +4044,7 @@ int FAR PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrevInst,
 					puts(longVersion);
 					puts("Usage  : tomenet [options] [servername]");
 					puts("Example: tomenet -lMorgoth MorgyPass -p18348 europe.tomenet.eu");
+					puts("  -h                 Display this help");
 					puts("  -C                 Compatibility mode for very old servers");
 					puts("  -F                 Client FPS");
 					puts("  -l<nick> <passwd>  Login as");
@@ -4050,6 +4064,7 @@ int FAR PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrevInst,
 					    "Usage  : tomenet [options] [servername]",
 					    "Example: tomenet -lMorgoth MorgyPass",
 					    "                 -p18348 europe.tomenet.eu",
+					    "  -h                 Display this help",
 					    "  -C                 Compatibility mode for very old servers",
 					    "  -F                 Client FPS",
 					    "  -k                 don't disable numlock on client startup",
@@ -4103,6 +4118,9 @@ int FAR PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrevInst,
 					break;
 				case 'V':
 					save_chat = 2;
+					break;
+				case 'x':
+					save_chat = 3;
 					break;
 			}
 		} else if (lpCmdLine[i] == ' ') {
@@ -4419,7 +4437,7 @@ void set_palette(byte c, byte r, byte g, byte b) {
 
 #ifdef PALANIM_OPTIMIZED
 	/* Check for refresh market at the end of a palette data transmission */
-	if (c == 127) {
+	if (c == 127 || c == 128) {
  #ifdef PALANIM_OPTIMIZED2
 		int i;
 		/* Batch-apply all colour changes */
@@ -4450,14 +4468,15 @@ void set_palette(byte c, byte r, byte g, byte b) {
  #if 0 /* no flickering here when animating colours 0..15, even though set_palette() flickers. Maybe because of colours 16-31 for some reason? */
 		Term_redraw();
  #else /* trying this instead, should be identical ie no flickering, as it's the minimal possible version simply */
-		Term_xtra(TERM_XTRA_FRESH, 0); /* Flickering occasionally on Windows :( */
+		if (c == 128) Term_redraw(); /* Hack: We really need instant refresh (for animated_lightning effect) */
+		else Term_xtra(TERM_XTRA_FRESH, 0); /* Flickering occasionally on Windows :( */
  #endif
 		/* Restore */
 		Term_activate(term_old);
 		return;
 	}
 #else
-	if (c == 127) return; //just discard refresh marker
+	if (c == 127 || c == 128) return; //just discard refresh marker
 #endif
 
 #ifdef PALANIM_SWAP
@@ -4510,5 +4529,12 @@ void set_palette(byte c, byte r, byte g, byte b) {
 	/* Restore */
 	Term_activate(term_old);
 #endif
+}
+void get_palette(byte c, byte *r, byte *g, byte *b) {
+	COLORREF cref = win_clr[c];
+
+	*r = GetRValue(cref);
+	*g = GetGValue(cref);
+	*b = GetBValue(cref);
 }
 #endif /* _Windows */
